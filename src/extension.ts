@@ -3,7 +3,7 @@ import { ClaudeProvider } from "./providers/claude";
 import { CodexProvider } from "./providers/codex";
 import { ProviderError, type UsageProvider, type UsageSnapshot } from "./types";
 import { appendSample, computePace, type PaceResult, type Sample } from "./pace";
-import { renderBar, renderGaugeLine } from "./gauge";
+import { displayWidth, renderBar, renderGaugeLine } from "./gauge";
 import {
   readCooldownUntil,
   readSharedCache,
@@ -64,6 +64,13 @@ function formatCountdown(resetsAt: Date, now: Date): string {
   return vscode.l10n.t("{0}m", minutes);
 }
 
+/** "5h" → "5時間", "7d Opus" → "7日 Opus" when the display language localizes the units. */
+function localizeWindowLabel(label: string): string {
+  return label.replace(/^(\d+)([hd])/, (_match, n: string, unit: string) =>
+    unit === "h" ? vscode.l10n.t("{0}h", n) : vscode.l10n.t("{0}d", n),
+  );
+}
+
 function statusText(state: ProviderState): string {
   const { provider, snapshot, lastError } = state;
   if (!snapshot) {
@@ -80,7 +87,7 @@ function statusText(state: ProviderState): string {
       const pct = `${Math.round(w.usedPercent)}%`;
       const bar = renderBar(w.usedPercent, 5);
       const value = format === "bar" ? bar : format === "both" ? `${bar} ${pct}` : pct;
-      return `${w.label} ${value}${onPaceToHit}`;
+      return `${localizeWindowLabel(w.label)} ${value}${onPaceToHit}`;
     });
   const suffix = lastError ? " $(warning)" : "";
   return `${provider.shortName} ${parts.join(" · ")}${suffix}`;
@@ -119,11 +126,12 @@ function buildTooltip(state: ProviderState): vscode.MarkdownString {
   if (snapshot) {
     const now = new Date();
     // Bar gauges like Claude Code's /usage view; the suffix is the reset countdown.
-    const labelWidth = Math.max(...snapshot.windows.map((w) => w.label.length)) + 2;
-    const lines = snapshot.windows.map((w) => {
+    const labels = snapshot.windows.map((w) => localizeWindowLabel(w.label));
+    const labelWidth = Math.max(...labels.map(displayWidth)) + 2;
+    const lines = snapshot.windows.map((w, i) => {
       const reset = w.resetsAt ? formatCountdown(w.resetsAt, now) : "";
       const risk = state.pace.get(w.label)?.willHitBeforeReset ? " ↗" : "";
-      return renderGaugeLine(w.label, w.usedPercent, `${reset}${risk}`, labelWidth);
+      return renderGaugeLine(labels[i], w.usedPercent, `${reset}${risk}`, labelWidth);
     });
     md.appendCodeblock(lines.join("\n"), "text");
     md.appendMarkdown(`\n`);
@@ -139,7 +147,7 @@ function buildTooltip(state: ProviderState): vscode.MarkdownString {
         md.appendMarkdown(
           `$(flame) ${vscode.l10n.t(
             "{0} window: at the current pace ({1}), the limit will be reached in about {2} — before the reset.",
-            w.label,
+            localizeWindowLabel(w.label),
             rateText,
             formatCountdown(pace.projectedHitAt!, now),
           )}\n\n`,
