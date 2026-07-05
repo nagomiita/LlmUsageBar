@@ -8,6 +8,8 @@
   "Window": "ウィンドウ",
   "Used": "使用率",
   "Resets in": "リセットまで",
+  "{0} window: at the current pace ({1}%/h) you will hit the limit around {2}, before the reset.": "{0} ウィンドウ: 現在のペース({1}%/時)だと、リセットより前の {2} 頃に制限へ到達する見込みです。",
+  "At the current pace, no limit is reached before its reset.": "現在のペースなら、リセット前に制限へ到達しません。",
   "Plan: {0}": "プラン: {0}",
   "Updated {0}": "更新 {0}",
   "Click to refresh.": "クリックで更新します。",

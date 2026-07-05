@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { ClaudeProvider } from "./providers/claude";
 import { CodexProvider } from "./providers/codex";
 import { ProviderError, type UsageProvider, type UsageSnapshot } from "./types";
+import { appendSample, computePace, type PaceResult, type Sample } from "./pace";
 import { checkForUpdatesInBackground, installLatestRelease } from "./update/githubRelease";
 
 const CONFIG_SECTION = "llmUsageBar";
@@ -14,6 +15,26 @@ interface ProviderState {
   consecutiveFailures: number;
   /** Poll ticks to skip before retrying after failures (exponential backoff). */
   skipTicks: number;
+  /** Last fetch attempt, for per-provider interval floors. */
+  lastAttemptAt: number;
+  /** Burn-rate estimate per window label, recomputed on each successful fetch. */
+  pace: Map<string, PaceResult>;
+}
+
+const CRITICAL_HIT_MS = 60 * 60 * 1000;
+
+function paceSeverity(state: ProviderState, now: Date): "safe" | "warn" | "critical" {
+  let severity: "safe" | "warn" | "critical" = "safe";
+  for (const pace of state.pace.values()) {
+    if (!pace.willHitBeforeReset || !pace.projectedHitAt) {
+      continue;
+    }
+    if (pace.projectedHitAt.getTime() - now.getTime() <= CRITICAL_HIT_MS) {
+      return "critical";
+    }
+    severity = "warn";
+  }
+  return severity;
 }
 
 function formatCountdown(resetsAt: Date, now: Date): string {
@@ -41,9 +62,13 @@ function statusText(state: ProviderState): string {
   }
   // Keep the bar compact: show at most the first two windows (session + weekly).
   // On fetch errors, keep the last known data visible and just append a warning icon.
+  // "↗" marks windows on pace to hit their limit before the reset.
   const parts = snapshot.windows
     .slice(0, 2)
-    .map((w) => `${w.label} ${Math.round(w.usedPercent)}%`);
+    .map((w) => {
+      const onPaceToHit = state.pace.get(w.label)?.willHitBeforeReset ? "↗" : "";
+      return `${w.label} ${Math.round(w.usedPercent)}%${onPaceToHit}`;
+    });
   const suffix = lastError ? " $(warning)" : "";
   return `${provider.shortName} ${parts.join(" · ")}${suffix}`;
 }
@@ -87,6 +112,22 @@ function buildTooltip(state: ProviderState): vscode.MarkdownString {
       md.appendMarkdown(`| ${w.label} | ${Math.round(w.usedPercent)}% | ${reset} |\n`);
     }
     md.appendMarkdown(`\n`);
+    const atRisk = snapshot.windows.filter((w) => state.pace.get(w.label)?.willHitBeforeReset);
+    if (atRisk.length > 0) {
+      for (const w of atRisk) {
+        const pace = state.pace.get(w.label)!;
+        md.appendMarkdown(
+          `$(flame) ${vscode.l10n.t(
+            "{0} window: at the current pace ({1}%/h) you will hit the limit around {2}, before the reset.",
+            w.label,
+            pace.ratePerHour.toFixed(1),
+            pace.projectedHitAt!.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          )}\n\n`,
+        );
+      }
+    } else if (state.pace.size > 0) {
+      md.appendMarkdown(`${vscode.l10n.t("At the current pace, no limit is reached before its reset.")}\n\n`);
+    }
     if (snapshot.plan) {
       md.appendMarkdown(`${vscode.l10n.t("Plan: {0}", snapshot.plan)}\n\n`);
     }
@@ -108,10 +149,11 @@ function applyColor(state: ProviderState): void {
   // Other errors only force the error color when we have no data at all to show.
   const isRateLimited = state.lastError instanceof ProviderError && state.lastError.kind === "rate-limited";
   const hardError = state.lastError !== undefined && !isRateLimited && !state.snapshot;
+  const severity = paceSeverity(state, new Date());
 
-  if (hardError || max >= error) {
+  if (hardError || max >= error || severity === "critical") {
     state.item.backgroundColor = new vscode.ThemeColor("statusBarItem.errorBackground");
-  } else if (max >= warn) {
+  } else if (max >= warn || severity === "warn") {
     state.item.backgroundColor = new vscode.ThemeColor("statusBarItem.warningBackground");
   } else {
     state.item.backgroundColor = undefined;
@@ -133,7 +175,35 @@ export function activate(context: vscode.ExtensionContext): void {
     item.name = `LLM Usage: ${provider.displayName}`;
     item.command = "llmUsageBar.refresh";
     context.subscriptions.push(item);
-    states.set(provider.id, { provider, item, consecutiveFailures: 0, skipTicks: 0 });
+    states.set(provider.id, {
+      provider,
+      item,
+      consecutiveFailures: 0,
+      skipTicks: 0,
+      lastAttemptAt: 0,
+      pace: new Map(),
+    });
+  }
+
+  function historyKey(providerId: string, windowLabel: string): string {
+    return `history.${providerId}.${windowLabel}`;
+  }
+
+  function updatePace(state: ProviderState, snapshot: UsageSnapshot): void {
+    const now = snapshot.fetchedAt;
+    state.pace = new Map();
+    for (const w of snapshot.windows) {
+      const key = historyKey(state.provider.id, w.label);
+      const history = appendSample(context.globalState.get<Sample[]>(key, []), {
+        t: now.getTime(),
+        p: w.usedPercent,
+      });
+      void context.globalState.update(key, history);
+      const pace = computePace(history, w.resetsAt, now);
+      if (pace) {
+        state.pace.set(w.label, pace);
+      }
+    }
   }
 
   function render(state: ProviderState): void {
@@ -155,11 +225,13 @@ export function activate(context: vscode.ExtensionContext): void {
       render(state);
       return;
     }
+    state.lastAttemptAt = Date.now();
     try {
       state.snapshot = await state.provider.fetchUsage();
       state.lastError = undefined;
       state.consecutiveFailures = 0;
       state.skipTicks = 0;
+      updatePace(state, state.snapshot);
     } catch (err) {
       state.lastError = err instanceof Error ? err : new Error(String(err));
       state.consecutiveFailures++;
@@ -184,6 +256,11 @@ export function activate(context: vscode.ExtensionContext): void {
           state.skipTicks--;
           continue;
         }
+        // Providers with strict API rate limits enforce a longer effective interval.
+        const requiredMs = Math.max(base, state.provider.minPollIntervalSeconds ?? 0) * 1000;
+        if (Date.now() - state.lastAttemptAt < requiredMs - 1000) {
+          continue;
+        }
         void refreshOne(state);
       }
     }, base * 1000);
@@ -194,6 +271,7 @@ export function activate(context: vscode.ExtensionContext): void {
       for (const state of states.values()) {
         state.consecutiveFailures = 0;
         state.skipTicks = 0;
+        state.lastAttemptAt = 0;
       }
       void refreshAll();
     }),

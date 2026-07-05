@@ -26,5 +26,7 @@ export interface UsageProvider {
   /** Short name shown in the status bar, e.g. "CC" */
   readonly shortName: string;
   readonly displayName: string;
+  /** Floor for the poll interval, for APIs with strict rate limits. */
+  readonly minPollIntervalSeconds?: number;
   fetchUsage(): Promise<UsageSnapshot>;
 }

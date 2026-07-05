@@ -68,6 +68,9 @@ export class ClaudeProvider implements UsageProvider {
   readonly id = "claude";
   readonly shortName = "CC";
   readonly displayName = "Claude";
+  // The oauth/usage endpoint rate-limits aggressively (429s observed even at
+  // 5-minute polling, likely shared with Claude Code's own traffic).
+  readonly minPollIntervalSeconds = 600;
 
   async fetchUsage(): Promise<UsageSnapshot> {
     const token = readAccessToken();
