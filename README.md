@@ -43,7 +43,7 @@ npm run package:vsix  # .vsix パッケージ作成
 
 | キー | 既定値 | 説明 |
 | --- | --- | --- |
-| `llmUsageBar.pollIntervalSeconds` | 60 | ポーリング間隔(秒、最小 15) |
+| `llmUsageBar.pollIntervalSeconds` | 300 | ポーリング間隔(秒、最小 60)。Claude の usage API はレート制限が厳しいため短くしすぎないこと |
 | `llmUsageBar.warnThresholdPercent` | 80 | 警告色の閾値 |
 | `llmUsageBar.errorThresholdPercent` | 95 | エラー色の閾値 |
 | `llmUsageBar.claude.enabled` | true | Claude の表示 |
@@ -51,4 +51,4 @@ npm run package:vsix  # .vsix パッケージ作成
 
 ## 注意
 
-どちらも非公式 API のため、予告なく形式が変わる可能性があります。取得に失敗した場合はステータスバーに `⚠` を表示し、拡張自体は動作し続けます(指数バックオフ付きで再試行)。
+どちらも非公式 API のため、予告なく形式が変わる可能性があります。取得に失敗しても最後に取得できたデータを表示し続け、`⚠` アイコンを添えて指数バックオフ付きで再試行します(一度もデータが取れていない場合のみ `⚠ CC —` 表示)。レート制限(429)は異常扱いせず、静かに再試行します。

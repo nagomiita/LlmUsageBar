@@ -11,7 +11,7 @@ export interface UsageSnapshot {
   fetchedAt: Date;
 }
 
-export type ProviderErrorKind = "not-logged-in" | "http" | "parse";
+export type ProviderErrorKind = "not-logged-in" | "rate-limited" | "http" | "parse";
 
 export class ProviderError extends Error {
   constructor(message: string, public readonly kind: ProviderErrorKind) {

@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { ClaudeProvider } from "./providers/claude";
 import { CodexProvider } from "./providers/codex";
 import { ProviderError, type UsageProvider, type UsageSnapshot } from "./types";
+import { checkForUpdatesInBackground, installLatestRelease } from "./update/githubRelease";
 
 const CONFIG_SECTION = "llmUsageBar";
 
@@ -35,17 +36,16 @@ function formatCountdown(resetsAt: Date, now: Date): string {
 
 function statusText(state: ProviderState): string {
   const { provider, snapshot, lastError } = state;
-  if (lastError) {
-    return `$(warning) ${provider.shortName} —`;
-  }
   if (!snapshot) {
-    return `$(sync~spin) ${provider.shortName}`;
+    return lastError ? `$(warning) ${provider.shortName} —` : `$(sync~spin) ${provider.shortName}`;
   }
   // Keep the bar compact: show at most the first two windows (session + weekly).
+  // On fetch errors, keep the last known data visible and just append a warning icon.
   const parts = snapshot.windows
     .slice(0, 2)
     .map((w) => `${w.label} ${Math.round(w.usedPercent)}%`);
-  return `${provider.shortName} ${parts.join(" · ")}`;
+  const suffix = lastError ? " $(warning)" : "";
+  return `${provider.shortName} ${parts.join(" · ")}${suffix}`;
 }
 
 function errorSummary(error: Error, providerName: string): string {
@@ -54,6 +54,11 @@ function errorSummary(error: Error, providerName: string): string {
       case "not-logged-in":
         return vscode.l10n.t(
           "Not signed in or the token has expired. Run the {0} CLI once to sign in again.",
+          providerName,
+        );
+      case "rate-limited":
+        return vscode.l10n.t(
+          "The {0} usage API is rate limited right now. Retrying later automatically.",
           providerName,
         );
       case "http":
@@ -99,7 +104,12 @@ function applyColor(state: ProviderState): void {
     ? Math.max(...state.snapshot.windows.map((w) => w.usedPercent))
     : 0;
 
-  if (state.lastError || max >= error) {
+  // Rate limiting is a normal condition, not a failure — never paint it as an error.
+  // Other errors only force the error color when we have no data at all to show.
+  const isRateLimited = state.lastError instanceof ProviderError && state.lastError.kind === "rate-limited";
+  const hardError = state.lastError !== undefined && !isRateLimited && !state.snapshot;
+
+  if (hardError || max >= error) {
     state.item.backgroundColor = new vscode.ThemeColor("statusBarItem.errorBackground");
   } else if (max >= warn) {
     state.item.backgroundColor = new vscode.ThemeColor("statusBarItem.warningBackground");
@@ -167,7 +177,7 @@ export function activate(context: vscode.ExtensionContext): void {
       clearInterval(timer);
     }
     const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
-    const base = Math.max(15, config.get<number>("pollIntervalSeconds", 60));
+    const base = Math.max(60, config.get<number>("pollIntervalSeconds", 300));
     timer = setInterval(() => {
       for (const state of states.values()) {
         if (state.skipTicks > 0) {
@@ -187,6 +197,15 @@ export function activate(context: vscode.ExtensionContext): void {
       }
       void refreshAll();
     }),
+    vscode.commands.registerCommand("llmUsageBar.checkForUpdates", async () => {
+      const installed = String(context.extension.packageJSON.version ?? "");
+      try {
+        await installLatestRelease(installed);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        void vscode.window.showErrorMessage(vscode.l10n.t("LLM Usage Bar: update failed. {0}", message));
+      }
+    }),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration(CONFIG_SECTION)) {
         schedule();
@@ -205,6 +224,7 @@ export function activate(context: vscode.ExtensionContext): void {
   }
   void refreshAll();
   schedule();
+  void checkForUpdatesInBackground(context);
 }
 
 export function deactivate(): void {

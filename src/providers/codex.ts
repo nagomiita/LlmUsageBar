@@ -111,6 +111,9 @@ export class CodexProvider implements UsageProvider {
         "not-logged-in",
       );
     }
+    if (res.status === 429) {
+      throw new ProviderError("Codex usage API is rate limited.", "rate-limited");
+    }
     if (!res.ok) {
       throw new ProviderError(`Codex usage API returned HTTP ${res.status}.`, "http");
     }

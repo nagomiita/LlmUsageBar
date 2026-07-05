@@ -1,5 +1,7 @@
 {
   "llmUsageBar.command.refresh.title": "LLM Usage Bar: Refresh Now",
+  "llmUsageBar.command.checkForUpdates.title": "LLM Usage Bar: Check for Updates",
+  "llmUsageBar.config.checkForUpdates": "Check GitHub Releases once a day for a newer version.",
   "llmUsageBar.config.pollIntervalSeconds": "How often to fetch usage data (seconds).",
   "llmUsageBar.config.warnThresholdPercent": "Show warning color when any window reaches this usage percent.",
   "llmUsageBar.config.errorThresholdPercent": "Show error color when any window reaches this usage percent.",
