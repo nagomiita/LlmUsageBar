@@ -4,6 +4,7 @@ import { CodexProvider } from "./providers/codex";
 import { ProviderError, type UsageProvider, type UsageSnapshot } from "./types";
 import { appendSample, computePace, type PaceResult, type Sample } from "./pace";
 import { renderBar, renderGaugeLine } from "./gauge";
+import { readSharedCache, releaseFetchLock, tryAcquireFetchLock, writeSharedCache } from "./sharedCache";
 import { checkForUpdatesInBackground, installLatestRelease } from "./update/githubRelease";
 
 const CONFIG_SECTION = "llmUsageBar";
@@ -175,7 +176,26 @@ function applyColor(state: ProviderState): void {
 export function activate(context: vscode.ExtensionContext): void {
   const providers: UsageProvider[] = [new ClaudeProvider(), new CodexProvider()];
   const states = new Map<string, ProviderState>();
+  // Shared across every window of this profile — the cross-window cache lives here.
+  const cacheDir = context.globalStorageUri.fsPath;
   let timer: NodeJS.Timeout | undefined;
+
+  function effectiveIntervalMs(state: ProviderState): number {
+    const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+    const base = Math.max(60, config.get<number>("pollIntervalSeconds", 300));
+    return Math.max(base, state.provider.minPollIntervalSeconds ?? 0) * 1000;
+  }
+
+  function adoptSnapshot(state: ProviderState, snapshot: UsageSnapshot): void {
+    const isNew = !state.snapshot || snapshot.fetchedAt.getTime() !== state.snapshot.fetchedAt.getTime();
+    state.snapshot = snapshot;
+    state.lastError = undefined;
+    state.consecutiveFailures = 0;
+    state.skipTicks = 0;
+    if (isNew) {
+      updatePace(state, snapshot);
+    }
+  }
 
   let priority = 100;
   for (const provider of providers) {
@@ -231,29 +251,48 @@ export function activate(context: vscode.ExtensionContext): void {
     state.item.show();
   }
 
-  async function refreshOne(state: ProviderState): Promise<void> {
+  async function refreshOne(state: ProviderState, force = false): Promise<void> {
     const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
     if (!config.get<boolean>(`${state.provider.id}.enabled`, true)) {
       render(state);
       return;
     }
     state.lastAttemptAt = Date.now();
+    const id = state.provider.id;
+
+    // Serve from the cross-window cache when another window fetched recently,
+    // so N open windows produce one API call per interval instead of N.
+    const cached = readSharedCache(cacheDir, id);
+    if (cached && !force && Date.now() - cached.fetchedAt.getTime() < effectiveIntervalMs(state)) {
+      adoptSnapshot(state, cached);
+      render(state);
+      return;
+    }
+
+    if (!tryAcquireFetchLock(cacheDir, id)) {
+      // Another window is fetching right now; show what we have and wait for its result.
+      if (cached) {
+        adoptSnapshot(state, cached);
+      }
+      render(state);
+      return;
+    }
     try {
-      state.snapshot = await state.provider.fetchUsage();
-      state.lastError = undefined;
-      state.consecutiveFailures = 0;
-      state.skipTicks = 0;
-      updatePace(state, state.snapshot);
+      const snapshot = await state.provider.fetchUsage();
+      writeSharedCache(cacheDir, id, snapshot);
+      adoptSnapshot(state, snapshot);
     } catch (err) {
       state.lastError = err instanceof Error ? err : new Error(String(err));
       state.consecutiveFailures++;
       state.skipTicks = Math.min(2 ** state.consecutiveFailures, 16);
+    } finally {
+      releaseFetchLock(cacheDir, id);
     }
     render(state);
   }
 
-  async function refreshAll(): Promise<void> {
-    await Promise.all([...states.values()].map(refreshOne));
+  async function refreshAll(force = false): Promise<void> {
+    await Promise.all([...states.values()].map((s) => refreshOne(s, force)));
   }
 
   function schedule(): void {
@@ -269,8 +308,7 @@ export function activate(context: vscode.ExtensionContext): void {
           continue;
         }
         // Providers with strict API rate limits enforce a longer effective interval.
-        const requiredMs = Math.max(base, state.provider.minPollIntervalSeconds ?? 0) * 1000;
-        if (Date.now() - state.lastAttemptAt < requiredMs - 1000) {
+        if (Date.now() - state.lastAttemptAt < effectiveIntervalMs(state) - 1000) {
           continue;
         }
         void refreshOne(state);
@@ -285,7 +323,7 @@ export function activate(context: vscode.ExtensionContext): void {
         state.skipTicks = 0;
         state.lastAttemptAt = 0;
       }
-      void refreshAll();
+      void refreshAll(true);
     }),
     vscode.commands.registerCommand("llmUsageBar.checkForUpdates", async () => {
       const installed = String(context.extension.packageJSON.version ?? "");
