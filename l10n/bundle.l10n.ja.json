@@ -1,5 +1,8 @@
 {
   "now": "まもなく",
+  "{0}d {1}h": "{0}日 {1}時間",
+  "{0}h {1}m": "{0}時間 {1}分",
+  "{0}m": "{0}分",
   "{0} usage": "{0} の使用状況",
   "Not signed in or the token has expired. Run the {0} CLI once to sign in again.": "未ログインまたはトークンの有効期限が切れています。{0} の CLI を一度実行して再ログインしてください。",
   "The {0} usage API is rate limited right now. Retrying later automatically.": "{0} の使用量 API が現在レート制限中です。しばらくして自動的に再試行します。",

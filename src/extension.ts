@@ -49,12 +49,12 @@ function formatCountdown(resetsAt: Date, now: Date): string {
   const hours = Math.floor((totalMinutes % 1440) / 60);
   const minutes = totalMinutes % 60;
   if (days > 0) {
-    return `${days}d ${hours}h`;
+    return vscode.l10n.t("{0}d {1}h", days, hours);
   }
   if (hours > 0) {
-    return `${hours}h ${minutes}m`;
+    return vscode.l10n.t("{0}h {1}m", hours, minutes);
   }
-  return `${minutes}m`;
+  return vscode.l10n.t("{0}m", minutes);
 }
 
 function statusText(state: ProviderState): string {
