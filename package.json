@@ -2,7 +2,7 @@
   "name": "llm-usage-bar",
   "displayName": "LLM Usage Bar",
   "description": "Show Claude Code / Codex CLI rate-limit usage in the VS Code status bar",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "takeshi",
   "private": true,
   "license": "MIT",
@@ -20,11 +20,12 @@
     "onStartupFinished"
   ],
   "main": "./dist/extension.js",
+  "l10n": "./l10n",
   "contributes": {
     "commands": [
       {
         "command": "llmUsageBar.refresh",
-        "title": "LLM Usage Bar: Refresh Now"
+        "title": "%llmUsageBar.command.refresh.title%"
       }
     ],
     "configuration": {
@@ -34,27 +35,27 @@
           "type": "number",
           "default": 60,
           "minimum": 15,
-          "description": "How often to fetch usage data (seconds)."
+          "description": "%llmUsageBar.config.pollIntervalSeconds%"
         },
         "llmUsageBar.warnThresholdPercent": {
           "type": "number",
           "default": 80,
-          "description": "Show warning color when any window reaches this usage percent."
+          "description": "%llmUsageBar.config.warnThresholdPercent%"
         },
         "llmUsageBar.errorThresholdPercent": {
           "type": "number",
           "default": 95,
-          "description": "Show error color when any window reaches this usage percent."
+          "description": "%llmUsageBar.config.errorThresholdPercent%"
         },
         "llmUsageBar.claude.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Show Claude usage."
+          "description": "%llmUsageBar.config.claude.enabled%"
         },
         "llmUsageBar.codex.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Show Codex usage."
+          "description": "%llmUsageBar.config.codex.enabled%"
         }
       }
     }

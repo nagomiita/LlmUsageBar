@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { ClaudeProvider } from "./providers/claude";
 import { CodexProvider } from "./providers/codex";
-import { type UsageProvider, type UsageSnapshot } from "./types";
+import { ProviderError, type UsageProvider, type UsageSnapshot } from "./types";
 
 const CONFIG_SECTION = "llmUsageBar";
 
@@ -18,7 +18,7 @@ interface ProviderState {
 function formatCountdown(resetsAt: Date, now: Date): string {
   const ms = resetsAt.getTime() - now.getTime();
   if (ms <= 0) {
-    return "now";
+    return vscode.l10n.t("now");
   }
   const totalMinutes = Math.round(ms / 60000);
   const days = Math.floor(totalMinutes / 1440);
@@ -48,28 +48,46 @@ function statusText(state: ProviderState): string {
   return `${provider.shortName} ${parts.join(" · ")}`;
 }
 
+function errorSummary(error: Error, providerName: string): string {
+  if (error instanceof ProviderError) {
+    switch (error.kind) {
+      case "not-logged-in":
+        return vscode.l10n.t(
+          "Not signed in or the token has expired. Run the {0} CLI once to sign in again.",
+          providerName,
+        );
+      case "http":
+        return vscode.l10n.t("Failed to fetch usage data from the {0} API.", providerName);
+      case "parse":
+        return vscode.l10n.t("Failed to parse the {0} usage API response.", providerName);
+    }
+  }
+  return error.message;
+}
+
 function buildTooltip(state: ProviderState): vscode.MarkdownString {
   const { provider, snapshot, lastError } = state;
   const md = new vscode.MarkdownString();
   md.supportThemeIcons = true;
-  md.appendMarkdown(`**${provider.displayName} usage**\n\n`);
+  md.appendMarkdown(`**${vscode.l10n.t("{0} usage", provider.displayName)}**\n\n`);
   if (lastError) {
-    md.appendMarkdown(`$(warning) ${lastError.message}\n\n`);
+    md.appendMarkdown(`$(warning) ${errorSummary(lastError, provider.displayName)}\n\n`);
   }
   if (snapshot) {
     const now = new Date();
-    md.appendMarkdown(`| Window | Used | Resets in |\n| --- | --- | --- |\n`);
+    const headers = [vscode.l10n.t("Window"), vscode.l10n.t("Used"), vscode.l10n.t("Resets in")];
+    md.appendMarkdown(`| ${headers.join(" | ")} |\n| --- | --- | --- |\n`);
     for (const w of snapshot.windows) {
       const reset = w.resetsAt ? formatCountdown(w.resetsAt, now) : "–";
       md.appendMarkdown(`| ${w.label} | ${Math.round(w.usedPercent)}% | ${reset} |\n`);
     }
     md.appendMarkdown(`\n`);
     if (snapshot.plan) {
-      md.appendMarkdown(`Plan: ${snapshot.plan}\n\n`);
+      md.appendMarkdown(`${vscode.l10n.t("Plan: {0}", snapshot.plan)}\n\n`);
     }
-    md.appendMarkdown(`_Updated ${snapshot.fetchedAt.toLocaleTimeString()}_\n\n`);
+    md.appendMarkdown(`_${vscode.l10n.t("Updated {0}", snapshot.fetchedAt.toLocaleTimeString())}_\n\n`);
   }
-  md.appendMarkdown(`Click to refresh.`);
+  md.appendMarkdown(vscode.l10n.t("Click to refresh."));
   return md;
 }
 
