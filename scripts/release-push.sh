@@ -13,7 +13,8 @@ npm run check
 npm run lint
 npm test
 
-git add -u
+# -A so newly added files (e.g. l10n bundles) are included, unlike `git add -u`.
+git add -A
 git commit -m "$MESSAGE"
 git push
 

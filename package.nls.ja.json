@@ -1,0 +1,8 @@
+{
+  "llmUsageBar.command.refresh.title": "LLM Usage Bar: 今すぐ更新",
+  "llmUsageBar.config.pollIntervalSeconds": "使用量データを取得する間隔(秒)。",
+  "llmUsageBar.config.warnThresholdPercent": "いずれかのウィンドウの使用率がこの値に達したら警告色で表示します。",
+  "llmUsageBar.config.errorThresholdPercent": "いずれかのウィンドウの使用率がこの値に達したらエラー色で表示します。",
+  "llmUsageBar.config.claude.enabled": "Claude の使用量を表示します。",
+  "llmUsageBar.config.codex.enabled": "Codex の使用量を表示します。"
+}
