@@ -23,10 +23,17 @@ export interface PaceResult {
 
 const HISTORY_RETENTION_MS = 24 * 60 * 60 * 1000;
 const MAX_SAMPLES = 300;
-/** Rate is measured over the most recent samples within this window. */
-const RATE_WINDOW_MS = 60 * 60 * 1000;
-/** Below this span the rate estimate is too noisy to act on. */
-const MIN_SPAN_MS = 20 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
+
+/**
+ * The burn rate is measured over a span proportional to the limit window, so
+ * short windows react to the current session (5h → last 1h) while long windows
+ * use a daily average (7d → last 24h) instead of extrapolating a burst.
+ */
+function rateWindowMs(windowSeconds: number | undefined): number {
+  const windowMs = (windowSeconds ?? 5 * 3600) * 1000;
+  return Math.min(Math.max(windowMs * 0.2, HOUR_MS), 24 * HOUR_MS);
+}
 
 export function appendSample(history: Sample[], sample: Sample): Sample[] {
   const kept = history.filter((s) => sample.t - s.t < HISTORY_RETENTION_MS && s.t < sample.t);
@@ -34,7 +41,12 @@ export function appendSample(history: Sample[], sample: Sample): Sample[] {
   return kept.slice(-MAX_SAMPLES);
 }
 
-export function computePace(history: Sample[], resetsAt: Date | undefined, now: Date): PaceResult | undefined {
+export function computePace(
+  history: Sample[],
+  resetsAt: Date | undefined,
+  now: Date,
+  windowSeconds?: number,
+): PaceResult | undefined {
   if (!resetsAt) {
     return undefined;
   }
@@ -44,14 +56,17 @@ export function computePace(history: Sample[], resetsAt: Date | undefined, now: 
     return undefined;
   }
 
-  const recent = history.filter((s) => nowMs - s.t <= RATE_WINDOW_MS);
+  const measureMs = rateWindowMs(windowSeconds);
+  // Below a third of the measurement span the rate estimate is too noisy to act on.
+  const minSpanMs = measureMs / 3;
+  const recent = history.filter((s) => nowMs - s.t <= measureMs);
   if (recent.length < 2) {
     return undefined;
   }
   const first = recent[0];
   const last = recent[recent.length - 1];
   const spanMs = last.t - first.t;
-  if (spanMs < MIN_SPAN_MS) {
+  if (spanMs < minSpanMs) {
     return undefined;
   }
 

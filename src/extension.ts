@@ -3,6 +3,7 @@ import { ClaudeProvider } from "./providers/claude";
 import { CodexProvider } from "./providers/codex";
 import { ProviderError, type UsageProvider, type UsageSnapshot } from "./types";
 import { appendSample, computePace, type PaceResult, type Sample } from "./pace";
+import { renderBar, renderGaugeLine } from "./gauge";
 import { checkForUpdatesInBackground, installLatestRelease } from "./update/githubRelease";
 
 const CONFIG_SECTION = "llmUsageBar";
@@ -63,11 +64,15 @@ function statusText(state: ProviderState): string {
   // Keep the bar compact: show at most the first two windows (session + weekly).
   // On fetch errors, keep the last known data visible and just append a warning icon.
   // "↗" marks windows on pace to hit their limit before the reset.
+  const format = vscode.workspace.getConfiguration(CONFIG_SECTION).get<string>("displayFormat", "percent");
   const parts = snapshot.windows
     .slice(0, 2)
     .map((w) => {
       const onPaceToHit = state.pace.get(w.label)?.willHitBeforeReset ? "↗" : "";
-      return `${w.label} ${Math.round(w.usedPercent)}%${onPaceToHit}`;
+      const pct = `${Math.round(w.usedPercent)}%`;
+      const bar = renderBar(w.usedPercent, 5);
+      const value = format === "bar" ? bar : format === "both" ? `${bar} ${pct}` : pct;
+      return `${w.label} ${value}${onPaceToHit}`;
     });
   const suffix = lastError ? " $(warning)" : "";
   return `${provider.shortName} ${parts.join(" · ")}${suffix}`;
@@ -105,23 +110,30 @@ function buildTooltip(state: ProviderState): vscode.MarkdownString {
   }
   if (snapshot) {
     const now = new Date();
-    const headers = [vscode.l10n.t("Window"), vscode.l10n.t("Used"), vscode.l10n.t("Resets in")];
-    md.appendMarkdown(`| ${headers.join(" | ")} |\n| --- | --- | --- |\n`);
-    for (const w of snapshot.windows) {
-      const reset = w.resetsAt ? formatCountdown(w.resetsAt, now) : "–";
-      md.appendMarkdown(`| ${w.label} | ${Math.round(w.usedPercent)}% | ${reset} |\n`);
-    }
+    // Bar gauges like Claude Code's /usage view; the suffix is the reset countdown.
+    const labelWidth = Math.max(...snapshot.windows.map((w) => w.label.length)) + 2;
+    const lines = snapshot.windows.map((w) => {
+      const reset = w.resetsAt ? formatCountdown(w.resetsAt, now) : "";
+      const risk = state.pace.get(w.label)?.willHitBeforeReset ? " ↗" : "";
+      return renderGaugeLine(w.label, w.usedPercent, `${reset}${risk}`, labelWidth);
+    });
+    md.appendCodeblock(lines.join("\n"), "text");
     md.appendMarkdown(`\n`);
     const atRisk = snapshot.windows.filter((w) => state.pace.get(w.label)?.willHitBeforeReset);
     if (atRisk.length > 0) {
       for (const w of atRisk) {
         const pace = state.pace.get(w.label)!;
+        // Long windows are judged and reported per day, short ones per hour.
+        const perDay = (w.windowSeconds ?? 0) >= 2 * 86400;
+        const rateText = perDay
+          ? vscode.l10n.t("{0}%/day", (pace.ratePerHour * 24).toFixed(1))
+          : vscode.l10n.t("{0}%/h", pace.ratePerHour.toFixed(1));
         md.appendMarkdown(
           `$(flame) ${vscode.l10n.t(
-            "{0} window: at the current pace ({1}%/h) you will hit the limit around {2}, before the reset.",
+            "{0} window: at the current pace ({1}), the limit will be reached in about {2} — before the reset.",
             w.label,
-            pace.ratePerHour.toFixed(1),
-            pace.projectedHitAt!.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            rateText,
+            formatCountdown(pace.projectedHitAt!, now),
           )}\n\n`,
         );
       }
@@ -199,7 +211,7 @@ export function activate(context: vscode.ExtensionContext): void {
         p: w.usedPercent,
       });
       void context.globalState.update(key, history);
-      const pace = computePace(history, w.resetsAt, now);
+      const pace = computePace(history, w.resetsAt, now, w.windowSeconds);
       if (pace) {
         state.pace.set(w.label, pace);
       }

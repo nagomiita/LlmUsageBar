@@ -3,6 +3,8 @@ export interface UsageWindow {
   label: string;
   usedPercent: number;
   resetsAt?: Date;
+  /** Length of the limit window, used to scale burn-rate measurement. */
+  windowSeconds?: number;
 }
 
 export interface UsageSnapshot {

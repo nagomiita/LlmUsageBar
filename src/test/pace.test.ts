@@ -51,6 +51,26 @@ test("returns undefined when the sample span is too short to judge", () => {
   assert.equal(computePace(history, new Date(NOW.getTime() + 3 * H), NOW), undefined);
 });
 
+const SEVEN_DAYS = 7 * 24 * 3600;
+
+test("7d window measures over the last 24h (daily rate), not the last hour", () => {
+  // Steady 0.5%/h over 20h (12%/day). A last-hour-only measurement would see the
+  // same rate, but the point is the 20h span is accepted for a 7d window.
+  const history = samples([1200, 30], [600, 35], [0, 40]);
+  const pace = computePace(history, new Date(NOW.getTime() + 72 * H), NOW, SEVEN_DAYS);
+  assert.ok(pace);
+  assert.equal(pace.ratePerHour.toFixed(2), "0.50");
+  // Remaining 60% at 0.5%/h → 120h to hit, reset in 72h → safe.
+  assert.equal(pace.willHitBeforeReset, false);
+});
+
+test("7d window rejects spans shorter than 8h as too noisy", () => {
+  // 1h of samples is enough for a 5h window but not for a 7d window.
+  const history = samples([60, 40], [30, 50], [0, 60]);
+  assert.ok(computePace(history, new Date(NOW.getTime() + 72 * H), NOW, 5 * 3600));
+  assert.equal(computePace(history, new Date(NOW.getTime() + 72 * H), NOW, SEVEN_DAYS), undefined);
+});
+
 test("returns undefined without a reset time or after reset", () => {
   const history = samples([60, 40], [0, 60]);
   assert.equal(computePace(history, undefined, NOW), undefined);

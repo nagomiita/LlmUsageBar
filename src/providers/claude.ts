@@ -36,18 +36,19 @@ interface UsageBucket {
   resets_at?: string;
 }
 
-const WINDOW_KEYS: Array<{ key: string; label: string }> = [
-  { key: "five_hour", label: "5h" },
-  { key: "seven_day", label: "7d" },
-  { key: "seven_day_sonnet", label: "7d Sonnet" },
-  { key: "seven_day_opus", label: "7d Opus" },
-  { key: "seven_day_oauth_apps", label: "7d Apps" },
+const DAY = 86400;
+const WINDOW_KEYS: Array<{ key: string; label: string; seconds: number }> = [
+  { key: "five_hour", label: "5h", seconds: 5 * 3600 },
+  { key: "seven_day", label: "7d", seconds: 7 * DAY },
+  { key: "seven_day_sonnet", label: "7d Sonnet", seconds: 7 * DAY },
+  { key: "seven_day_opus", label: "7d Opus", seconds: 7 * DAY },
+  { key: "seven_day_oauth_apps", label: "7d Apps", seconds: 7 * DAY },
 ];
 
 /** Parse the /api/oauth/usage response body. Exported for tests. */
 export function parseClaudeUsage(body: Record<string, unknown>, now: Date): UsageSnapshot {
   const windows: UsageWindow[] = [];
-  for (const { key, label } of WINDOW_KEYS) {
+  for (const { key, label, seconds } of WINDOW_KEYS) {
     const bucket = body[key] as UsageBucket | null | undefined;
     if (!bucket || typeof bucket.utilization !== "number") {
       continue;
@@ -56,6 +57,7 @@ export function parseClaudeUsage(body: Record<string, unknown>, now: Date): Usag
       label,
       usedPercent: bucket.utilization,
       resetsAt: bucket.resets_at ? new Date(bucket.resets_at) : undefined,
+      windowSeconds: seconds,
     });
   }
   if (windows.length === 0) {

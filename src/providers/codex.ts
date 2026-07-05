@@ -73,10 +73,13 @@ export function parseCodexUsage(body: Record<string, unknown>, now: Date): Usage
     if (!w || typeof w.used_percent !== "number") {
       continue;
     }
+    const seconds =
+      w.limit_window_seconds ?? (typeof w.window_minutes === "number" ? w.window_minutes * 60 : undefined);
     windows.push({
       label: windowLabel(w, fallback),
       usedPercent: w.used_percent,
       resetsAt: windowReset(w, now),
+      windowSeconds: seconds,
     });
   }
   if (windows.length === 0) {
