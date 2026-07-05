@@ -1,0 +1,85 @@
+{
+  "name": "llm-usage-bar",
+  "displayName": "LLM Usage Bar",
+  "description": "Show Claude Code / Codex CLI rate-limit usage in the VS Code status bar",
+  "version": "0.1.0",
+  "publisher": "takeshi",
+  "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nagomiita/LlmUsageBar.git"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "llmUsageBar.refresh",
+        "title": "LLM Usage Bar: Refresh Now"
+      }
+    ],
+    "configuration": {
+      "title": "LLM Usage Bar",
+      "properties": {
+        "llmUsageBar.pollIntervalSeconds": {
+          "type": "number",
+          "default": 60,
+          "minimum": 15,
+          "description": "How often to fetch usage data (seconds)."
+        },
+        "llmUsageBar.warnThresholdPercent": {
+          "type": "number",
+          "default": 80,
+          "description": "Show warning color when any window reaches this usage percent."
+        },
+        "llmUsageBar.errorThresholdPercent": {
+          "type": "number",
+          "default": 95,
+          "description": "Show error color when any window reaches this usage percent."
+        },
+        "llmUsageBar.claude.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show Claude usage."
+        },
+        "llmUsageBar.codex.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show Codex usage."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "check": "tsc -p ./ --noEmit",
+    "lint": "eslint src",
+    "test": "npm run compile && node --test \"out/test/*.test.js\"",
+    "bundle": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --target=node20 --minify",
+    "bundle:dev": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --target=node20 --sourcemap",
+    "vscode:prepublish": "npm run bundle",
+    "package:vsix": "vsce package",
+    "release:local": "bash scripts/release-local.sh",
+    "release:push": "bash scripts/release-push.sh"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@vscode/vsce": "^3.6.1",
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.90.0",
+    "esbuild": "^0.28.1",
+    "eslint": "^10.6.0",
+    "typescript": "^5.5.0",
+    "typescript-eslint": "^8.62.1"
+  }
+}
