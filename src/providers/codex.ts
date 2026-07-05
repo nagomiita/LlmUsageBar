@@ -90,7 +90,18 @@ export function parseCodexUsage(body: Record<string, unknown>, now: Date): Usage
   if (typeof body.plan_type === "string") {
     plan = body.plan_type;
   }
-  return { windows, plan, fetchedAt: now };
+
+  let credits: UsageSnapshot["credits"];
+  const rawCredits = body.credits as
+    | { has_credits?: boolean; unlimited?: boolean; balance?: string | number }
+    | null
+    | undefined;
+  if (rawCredits?.unlimited) {
+    credits = { unlimited: true };
+  } else if (rawCredits && (rawCredits.has_credits || Number(rawCredits.balance) > 0)) {
+    credits = { balance: String(rawCredits.balance ?? "") };
+  }
+  return { windows, plan, credits, fetchedAt: now };
 }
 
 export class CodexProvider implements UsageProvider {

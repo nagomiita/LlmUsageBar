@@ -4,7 +4,14 @@ import { CodexProvider } from "./providers/codex";
 import { ProviderError, type UsageProvider, type UsageSnapshot } from "./types";
 import { appendSample, computePace, type PaceResult, type Sample } from "./pace";
 import { renderBar, renderGaugeLine } from "./gauge";
-import { readSharedCache, releaseFetchLock, tryAcquireFetchLock, writeSharedCache } from "./sharedCache";
+import {
+  readCooldownUntil,
+  readSharedCache,
+  releaseFetchLock,
+  tryAcquireFetchLock,
+  writeCooldown,
+  writeSharedCache,
+} from "./sharedCache";
 import { checkForUpdatesInBackground, installLatestRelease } from "./update/githubRelease";
 
 const CONFIG_SECTION = "llmUsageBar";
@@ -141,6 +148,28 @@ function buildTooltip(state: ProviderState): vscode.MarkdownString {
     } else if (state.pace.size > 0) {
       md.appendMarkdown(`${vscode.l10n.t("At the current pace, no limit is reached before its reset.")}\n\n`);
     }
+    const credits = snapshot.credits;
+    if (credits) {
+      if (credits.unlimited) {
+        md.appendMarkdown(`${vscode.l10n.t("Credits: unlimited")}\n\n`);
+      } else if (typeof credits.usedMinor === "number" && typeof credits.limitMinor === "number") {
+        const exp = credits.exponent ?? 2;
+        const symbol = credits.currency === "USD" ? "$" : credits.currency ? `${credits.currency} ` : "";
+        const fmt = (minor: number) => `${symbol}${(minor / 10 ** exp).toFixed(exp)}`;
+        const pct = credits.limitMinor > 0 ? ((credits.usedMinor / credits.limitMinor) * 100).toFixed(1) : "0";
+        md.appendMarkdown(
+          `${vscode.l10n.t(
+            "Extra usage credits: {0} used / {1} ({2}%), {3} left",
+            fmt(credits.usedMinor),
+            fmt(credits.limitMinor),
+            pct,
+            fmt(Math.max(0, credits.limitMinor - credits.usedMinor)),
+          )}\n\n`,
+        );
+      } else if (credits.balance !== undefined) {
+        md.appendMarkdown(`${vscode.l10n.t("Credit balance: {0}", credits.balance)}\n\n`);
+      }
+    }
     if (snapshot.plan) {
       md.appendMarkdown(`${vscode.l10n.t("Plan: {0}", snapshot.plan)}\n\n`);
     }
@@ -269,6 +298,21 @@ export function activate(context: vscode.ExtensionContext): void {
       return;
     }
 
+    // A recent failure in ANY window pauses fetching in ALL windows; otherwise
+    // each window retries independently and a rate-limited API never recovers.
+    const cooldownUntil = readCooldownUntil(cacheDir, id);
+    if (!force && Date.now() < cooldownUntil) {
+      if (cached) {
+        adoptSnapshot(state, cached);
+      }
+      state.lastError = new ProviderError(
+        `${state.provider.displayName} usage API is cooling down after a failure.`,
+        "rate-limited",
+      );
+      render(state);
+      return;
+    }
+
     if (!tryAcquireFetchLock(cacheDir, id)) {
       // Another window is fetching right now; show what we have and wait for its result.
       if (cached) {
@@ -285,6 +329,8 @@ export function activate(context: vscode.ExtensionContext): void {
       state.lastError = err instanceof Error ? err : new Error(String(err));
       state.consecutiveFailures++;
       state.skipTicks = Math.min(2 ** state.consecutiveFailures, 16);
+      const isRateLimited = err instanceof ProviderError && err.kind === "rate-limited";
+      writeCooldown(cacheDir, id, Date.now() + (isRateLimited ? 15 : 5) * 60 * 1000);
     } finally {
       releaseFetchLock(cacheDir, id);
     }

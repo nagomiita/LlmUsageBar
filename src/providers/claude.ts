@@ -63,7 +63,22 @@ export function parseClaudeUsage(body: Record<string, unknown>, now: Date): Usag
   if (windows.length === 0) {
     throw new ProviderError("Claude usage API response had no recognizable windows.", "parse");
   }
-  return { windows, fetchedAt: now };
+
+  // "Extra usage" credits cover overflow beyond the plan limits when enabled.
+  let credits: UsageSnapshot["credits"];
+  const extra = body.extra_usage as
+    | { is_enabled?: boolean; monthly_limit?: number; used_credits?: number; currency?: string; decimal_places?: number }
+    | null
+    | undefined;
+  if (extra?.is_enabled && typeof extra.monthly_limit === "number" && typeof extra.used_credits === "number") {
+    credits = {
+      usedMinor: extra.used_credits,
+      limitMinor: extra.monthly_limit,
+      exponent: extra.decimal_places ?? 2,
+      currency: extra.currency,
+    };
+  }
+  return { windows, credits, fetchedAt: now };
 }
 
 export class ClaudeProvider implements UsageProvider {

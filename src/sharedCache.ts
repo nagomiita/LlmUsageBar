@@ -1,6 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
-import type { UsageSnapshot } from "./types";
+import type { CreditInfo, UsageSnapshot } from "./types";
 
 /**
  * File-based snapshot cache shared by every VS Code window running this
@@ -20,6 +20,7 @@ interface SerializedWindow {
 interface SerializedSnapshot {
   windows: SerializedWindow[];
   plan?: string;
+  credits?: CreditInfo;
   fetchedAt: string;
 }
 
@@ -47,6 +48,7 @@ export function readSharedCache(dir: string, providerId: string): UsageSnapshot 
         windowSeconds: w.windowSeconds,
       })),
       plan: raw.plan,
+      credits: raw.credits,
       fetchedAt: new Date(raw.fetchedAt),
     };
   } catch {
@@ -63,6 +65,7 @@ export function writeSharedCache(dir: string, providerId: string, snapshot: Usag
       windowSeconds: w.windowSeconds,
     })),
     plan: snapshot.plan,
+    credits: snapshot.credits,
     fetchedAt: snapshot.fetchedAt.toISOString(),
   };
   try {
@@ -102,5 +105,32 @@ export function releaseFetchLock(dir: string, providerId: string): void {
     fs.unlinkSync(lockPath(dir, providerId));
   } catch {
     // Already gone; nothing to release.
+  }
+}
+
+/**
+ * Failure cooldown shared across windows. Without it, a fetch failure is
+ * private to the window that saw it, so N windows keep independently retrying
+ * a rate-limited API and hold the 429 open forever.
+ */
+function cooldownPath(dir: string, providerId: string): string {
+  return path.join(dir, `cooldown-${providerId}.json`);
+}
+
+export function readCooldownUntil(dir: string, providerId: string): number {
+  try {
+    const raw = JSON.parse(fs.readFileSync(cooldownPath(dir, providerId), "utf8")) as { until?: number };
+    return typeof raw.until === "number" ? raw.until : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function writeCooldown(dir: string, providerId: string, untilMs: number): void {
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(cooldownPath(dir, providerId), JSON.stringify({ until: untilMs }));
+  } catch {
+    // Best-effort, like the cache itself.
   }
 }

@@ -74,6 +74,17 @@ test("supports legacy rate_limits plural and primary/secondary keys", () => {
   assert.equal(snap.windows[1].resetsAt, undefined);
 });
 
+test("parses credits only when they exist", () => {
+  const none = { ...fixture(), credits: { has_credits: false, unlimited: false, balance: "0" } };
+  assert.equal(parseCodexUsage(none, NOW).credits, undefined);
+
+  const some = { ...fixture(), credits: { has_credits: true, unlimited: false, balance: "1250" } };
+  assert.deepEqual(parseCodexUsage(some, NOW).credits, { balance: "1250" });
+
+  const unlimited = { ...fixture(), credits: { has_credits: true, unlimited: true } };
+  assert.deepEqual(parseCodexUsage(unlimited, NOW).credits, { unlimited: true });
+});
+
 test("throws parse error when no windows are recognizable", () => {
   assert.throws(
     () => parseCodexUsage({ rate_limit: {} }, NOW),

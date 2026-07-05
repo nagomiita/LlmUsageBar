@@ -42,6 +42,28 @@ test("skips null and malformed buckets", () => {
   assert.equal(snap.windows[0].resetsAt, undefined);
 });
 
+test("parses extra usage credits when enabled", () => {
+  const body = {
+    ...fixture(),
+    extra_usage: {
+      is_enabled: true,
+      monthly_limit: 10000,
+      used_credits: 91,
+      utilization: 0.91,
+      currency: "USD",
+      decimal_places: 2,
+    },
+  };
+  const snap = parseClaudeUsage(body, NOW);
+  assert.deepEqual(snap.credits, { usedMinor: 91, limitMinor: 10000, exponent: 2, currency: "USD" });
+});
+
+test("omits credits when extra usage is disabled or absent", () => {
+  assert.equal(parseClaudeUsage(fixture(), NOW).credits, undefined);
+  const disabled = { ...fixture(), extra_usage: { is_enabled: false, monthly_limit: 10000, used_credits: 0 } };
+  assert.equal(parseClaudeUsage(disabled, NOW).credits, undefined);
+});
+
 test("throws parse error when no windows are recognizable", () => {
   assert.throws(
     () => parseClaudeUsage({ unexpected: true }, NOW),

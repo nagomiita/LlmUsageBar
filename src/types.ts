@@ -7,9 +7,22 @@ export interface UsageWindow {
   windowSeconds?: number;
 }
 
+export interface CreditInfo {
+  /** Used / limit amounts in minor currency units (e.g. cents), for Claude extra usage. */
+  usedMinor?: number;
+  limitMinor?: number;
+  exponent?: number;
+  currency?: string;
+  /** Remaining credit balance, for Codex. */
+  balance?: string;
+  unlimited?: boolean;
+}
+
 export interface UsageSnapshot {
   windows: UsageWindow[];
   plan?: string;
+  /** Present only when the account actually has credits / extra usage enabled. */
+  credits?: CreditInfo;
   fetchedAt: Date;
 }
 

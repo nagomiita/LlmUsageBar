@@ -4,9 +4,11 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
+  readCooldownUntil,
   readSharedCache,
   releaseFetchLock,
   tryAcquireFetchLock,
+  writeCooldown,
   writeSharedCache,
 } from "../sharedCache";
 import type { UsageSnapshot } from "../types";
@@ -21,6 +23,7 @@ const SNAPSHOT: UsageSnapshot = {
     { label: "7d", usedPercent: 52, windowSeconds: 604800 },
   ],
   plan: "plus",
+  credits: { usedMinor: 91, limitMinor: 10000, exponent: 2, currency: "USD" },
   fetchedAt: new Date("2026-07-05T08:00:00Z"),
 };
 
@@ -34,6 +37,16 @@ test("cache round-trips snapshots with dates revived", () => {
   assert.equal(read.windows[1].resetsAt, undefined);
   assert.equal(read.plan, "plus");
   assert.equal(read.windows[1].windowSeconds, 604800);
+  assert.deepEqual(read.credits, SNAPSHOT.credits);
+});
+
+test("cooldown round-trips and defaults to 0", () => {
+  const dir = tmpDir();
+  assert.equal(readCooldownUntil(dir, "claude"), 0);
+  const until = Date.now() + 15 * 60 * 1000;
+  writeCooldown(dir, "claude", until);
+  assert.equal(readCooldownUntil(dir, "claude"), until);
+  assert.equal(readCooldownUntil(dir, "codex"), 0);
 });
 
 test("readSharedCache returns undefined for missing or corrupt files", () => {
