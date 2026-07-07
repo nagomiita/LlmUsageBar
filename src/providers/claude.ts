@@ -1,9 +1,11 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import { execFileSync } from "child_process";
 import { ProviderError, type UsageProvider, type UsageSnapshot, type UsageWindow } from "../types";
 
 const USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
+const CLAUDE_KEYCHAIN_SERVICE = "Claude Code-credentials";
 
 interface ClaudeCredentials {
   claudeAiOauth?: {
@@ -78,8 +80,52 @@ export function readAccessTokenFromPaths(paths: string[]): string {
   );
 }
 
+function readClaudeKeychainPayload(): string | undefined {
+  if (process.platform !== "darwin") {
+    return undefined;
+  }
+  try {
+    return execFileSync(
+      "/usr/bin/security",
+      ["find-generic-password", "-s", CLAUDE_KEYCHAIN_SERVICE, "-w"],
+      {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+        timeout: 2000,
+      },
+    ).trim();
+  } catch {
+    return undefined;
+  }
+}
+
+export function readAccessTokenFromSources(
+  paths: string[],
+  keychainReader: () => string | undefined = readClaudeKeychainPayload,
+): string {
+  try {
+    return readAccessTokenFromPaths(paths);
+  } catch (fileError) {
+    const payload = keychainReader();
+    if (payload) {
+      try {
+        const token = findAccessToken(JSON.parse(payload) as unknown);
+        if (token) {
+          return token;
+        }
+      } catch {
+        // Fall through to the file error, which includes the searched paths.
+      }
+    }
+    if (fileError instanceof ProviderError) {
+      throw fileError;
+    }
+    throw new ProviderError("Claude OAuth token not found.", "not-logged-in");
+  }
+}
+
 function readAccessToken(): string {
-  return readAccessTokenFromPaths(candidateCredentialPaths());
+  return readAccessTokenFromSources(candidateCredentialPaths());
 }
 
 interface UsageBucket {

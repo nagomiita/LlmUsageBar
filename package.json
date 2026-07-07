@@ -2,7 +2,7 @@
   "name": "llm-usage-bar",
   "displayName": "LLM Usage Bar",
   "description": "Show Claude Code / Codex CLI rate-limit usage in the VS Code status bar",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "publisher": "takeshi",
   "private": true,
   "license": "MIT",

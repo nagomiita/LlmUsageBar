@@ -3,7 +3,7 @@ import * as assert from "node:assert/strict";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { parseClaudeUsage, readAccessTokenFromPaths } from "../providers/claude";
+import { parseClaudeUsage, readAccessTokenFromPaths, readAccessTokenFromSources } from "../providers/claude";
 import { ProviderError } from "../types";
 
 const NOW = new Date("2026-07-05T04:00:00Z");
@@ -99,6 +99,32 @@ test("throws not-logged-in when Claude token is absent", () => {
 
   assert.throws(
     () => readAccessTokenFromPaths([config]),
+    (e: unknown) => e instanceof ProviderError && e.kind === "not-logged-in",
+  );
+});
+
+test("reads access token from macOS Claude Code keychain payload fallback", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "llm-usage-bar-claude-"));
+  const missingCurrent = path.join(dir, ".claude.json");
+  const missingLegacy = path.join(dir, ".claude", ".credentials.json");
+  const keychainPayload = JSON.stringify({
+    claudeAiOauth: {
+      accessToken: "keychain-token",
+      refreshToken: "keychain-refresh",
+      expiresAt: Date.now() + 3600_000,
+    },
+  });
+
+  assert.equal(readAccessTokenFromSources([missingCurrent, missingLegacy], () => keychainPayload), "keychain-token");
+});
+
+test("ignores malformed Claude keychain payload and reports not-logged-in", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "llm-usage-bar-claude-"));
+  const missingCurrent = path.join(dir, ".claude.json");
+  const missingLegacy = path.join(dir, ".claude", ".credentials.json");
+
+  assert.throws(
+    () => readAccessTokenFromSources([missingCurrent, missingLegacy], () => "not json"),
     (e: unknown) => e instanceof ProviderError && e.kind === "not-logged-in",
   );
 });
