@@ -18,6 +18,7 @@
   "Extra usage credits: {0} used / {1} ({2}%), {3} left": "エクストラ利用クレジット: {0} 使用 / {1}({2}%)、残り {3}",
   "Credit balance: {0}": "クレジット残高: {0}",
   "Plan: {0}": "プラン: {0}",
+  "Metered estimate — context {0} tokens, session ~${1}": "従量課金の概算 — コンテキスト {0} トークン、セッション累計 約${1}",
   "Updated {0}": "更新 {0}",
   "Click to refresh.": "クリックで更新します。",
   "Update": "更新",

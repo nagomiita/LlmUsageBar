@@ -12,23 +12,74 @@ interface ClaudeCredentials {
   };
 }
 
+function candidateCredentialPaths(): string[] {
+  const home = os.homedir();
+  return [
+    // Current Claude Code stores the OAuth session in this global config file.
+    path.join(home, ".claude.json"),
+    // Older Claude Code builds used this separate credentials file.
+    path.join(home, ".claude", ".credentials.json"),
+  ];
+}
+
+function findAccessToken(value: unknown): string | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const obj = value as Record<string, unknown>;
+  const direct = obj.accessToken;
+  if (typeof direct === "string" && direct.length > 0) {
+    return direct;
+  }
+  const oauth = obj.claudeAiOauth;
+  if (oauth && typeof oauth === "object") {
+    const token = (oauth as ClaudeCredentials["claudeAiOauth"])?.accessToken;
+    if (typeof token === "string" && token.length > 0) {
+      return token;
+    }
+  }
+  for (const child of Object.values(obj)) {
+    const token = findAccessToken(child);
+    if (token) {
+      return token;
+    }
+  }
+  return undefined;
+}
+
+export function readAccessTokenFromPaths(paths: string[]): string {
+  const missing: string[] = [];
+  const invalid: string[] = [];
+  for (const credPath of paths) {
+    let raw: string;
+    try {
+      raw = fs.readFileSync(credPath, "utf8");
+    } catch {
+      missing.push(credPath);
+      continue;
+    }
+    let creds: unknown;
+    try {
+      creds = JSON.parse(raw) as ClaudeCredentials;
+    } catch {
+      invalid.push(credPath);
+      continue;
+    }
+    const token = findAccessToken(creds);
+    if (token) {
+      return token;
+    }
+    invalid.push(credPath);
+  }
+  const searched = [...missing, ...invalid].join(", ");
+  throw new ProviderError(
+    `Claude OAuth token not found. Searched: ${searched}. Log in with the Claude Code CLI first.`,
+    "not-logged-in",
+  );
+}
+
 function readAccessToken(): string {
-  const credPath = path.join(os.homedir(), ".claude", ".credentials.json");
-  let raw: string;
-  try {
-    raw = fs.readFileSync(credPath, "utf8");
-  } catch {
-    throw new ProviderError(
-      `Claude credentials not found at ${credPath}. Log in with the Claude Code CLI first.`,
-      "not-logged-in",
-    );
-  }
-  const creds = JSON.parse(raw) as ClaudeCredentials;
-  const token = creds.claudeAiOauth?.accessToken;
-  if (!token) {
-    throw new ProviderError("No accessToken in Claude credentials file.", "not-logged-in");
-  }
-  return token;
+  return readAccessTokenFromPaths(candidateCredentialPaths());
 }
 
 interface UsageBucket {

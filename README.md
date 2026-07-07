@@ -15,6 +15,7 @@ CC 5h 30% · 7d 50%    CX 5h 47% · 7d 62%
 - ステータスバー本体も設定でバーゲージ表示に切替可能(`llmUsageBar.displayFormat`: percent / bar / both)
 - 使用率が閾値(既定 80% / 95%)を超えると警告色 / エラー色に変化
 - **ペース判定**: 直近1時間の実測消費レート(%/時)から、リセット前に制限へ到達するペースかを判定。到達見込みのウィンドウには `↗` を表示し、ツールチップに到達予測時刻を表示(1時間以内ならエラー色)
+- **従量課金の概算**(Claude): 現在のワークスペースの Claude Code セッション記録(`~/.claude/projects/`)から、現在のコンテキスト量と、もし従量課金だった場合のセッション累計コストを推定してツールチップに表示(`llmUsageBar.claude.showSessionCost` で無効化可)。キャッシュ読み取り(入力単価の 0.1 倍)/書き込み(5分 1.25 倍・1時間 2 倍)を区別して計算
 - クリックで即時リフレッシュ
 
 ## 仕組み(追加ログイン不要)
@@ -49,6 +50,7 @@ npm run package:vsix  # .vsix パッケージ作成
 | `llmUsageBar.warnThresholdPercent` | 80 | 警告色の閾値 |
 | `llmUsageBar.errorThresholdPercent` | 95 | エラー色の閾値 |
 | `llmUsageBar.claude.enabled` | true | Claude の表示 |
+| `llmUsageBar.claude.showSessionCost` | true | セッションの従量課金概算をツールチップに表示 |
 | `llmUsageBar.codex.enabled` | true | Codex の表示 |
 
 ## 注意

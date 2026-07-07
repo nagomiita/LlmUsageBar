@@ -1,6 +1,9 @@
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
-import { parseClaudeUsage } from "../providers/claude";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
+import { parseClaudeUsage, readAccessTokenFromPaths } from "../providers/claude";
 import { ProviderError } from "../types";
 
 const NOW = new Date("2026-07-05T04:00:00Z");
@@ -68,5 +71,34 @@ test("throws parse error when no windows are recognizable", () => {
   assert.throws(
     () => parseClaudeUsage({ unexpected: true }, NOW),
     (e: unknown) => e instanceof ProviderError && e.kind === "parse",
+  );
+});
+
+test("reads access token from current Claude Code config file shape", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "llm-usage-bar-claude-"));
+  const config = path.join(dir, ".claude.json");
+  fs.writeFileSync(config, JSON.stringify({ oauth: { claudeAiOauth: { accessToken: "new-token" } } }));
+
+  assert.equal(readAccessTokenFromPaths([config]), "new-token");
+});
+
+test("falls back to legacy Claude credentials file shape", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "llm-usage-bar-claude-"));
+  const missingCurrent = path.join(dir, ".claude.json");
+  const legacy = path.join(dir, ".claude", ".credentials.json");
+  fs.mkdirSync(path.dirname(legacy), { recursive: true });
+  fs.writeFileSync(legacy, JSON.stringify({ claudeAiOauth: { accessToken: "legacy-token" } }));
+
+  assert.equal(readAccessTokenFromPaths([missingCurrent, legacy]), "legacy-token");
+});
+
+test("throws not-logged-in when Claude token is absent", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "llm-usage-bar-claude-"));
+  const config = path.join(dir, ".claude.json");
+  fs.writeFileSync(config, JSON.stringify({ oauth: {} }));
+
+  assert.throws(
+    () => readAccessTokenFromPaths([config]),
+    (e: unknown) => e instanceof ProviderError && e.kind === "not-logged-in",
   );
 });

@@ -7,5 +7,6 @@
   "llmUsageBar.config.warnThresholdPercent": "いずれかのウィンドウの使用率がこの値に達したら警告色で表示します。",
   "llmUsageBar.config.errorThresholdPercent": "いずれかのウィンドウの使用率がこの値に達したらエラー色で表示します。",
   "llmUsageBar.config.claude.enabled": "Claude の使用量を表示します。",
+  "llmUsageBar.config.claude.showSessionCost": "現在の Claude Code セッションの従量課金の概算を、ローカルの記録から計算してツールチップに表示します。",
   "llmUsageBar.config.codex.enabled": "Codex の使用量を表示します。"
 }

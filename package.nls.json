@@ -7,5 +7,6 @@
   "llmUsageBar.config.warnThresholdPercent": "Show warning color when any window reaches this usage percent.",
   "llmUsageBar.config.errorThresholdPercent": "Show error color when any window reaches this usage percent.",
   "llmUsageBar.config.claude.enabled": "Show Claude usage.",
+  "llmUsageBar.config.claude.showSessionCost": "Show a pay-as-you-go cost estimate for the active Claude Code session in the tooltip, computed from the local transcript.",
   "llmUsageBar.config.codex.enabled": "Show Codex usage."
 }

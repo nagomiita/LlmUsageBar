@@ -13,8 +13,47 @@ import {
   writeSharedCache,
 } from "./sharedCache";
 import { checkForUpdatesInBackground, installLatestRelease } from "./update/githubRelease";
+import { estimateSessionCost } from "./cost";
 
 const CONFIG_SECTION = "llmUsageBar";
+
+/** Format a token count compactly: 235923 → "236k", 1_500_000 → "1.5M". */
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) {
+    return `${(n / 1_000_000).toFixed(1)}M`;
+  }
+  if (n >= 1000) {
+    return `${Math.round(n / 1000)}k`;
+  }
+  return String(n);
+}
+
+/**
+ * Append a metered-cost estimate for the active Claude Code session, read from
+ * the local transcript. This is workspace-specific and independent of the usage
+ * API, so it's computed at render time rather than flowing through the cache.
+ */
+function appendSessionCost(md: vscode.MarkdownString): void {
+  const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+  if (!config.get<boolean>("claude.showSessionCost", true)) {
+    return;
+  }
+  const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  if (!workspacePath) {
+    return;
+  }
+  const cost = estimateSessionCost(workspacePath);
+  if (!cost) {
+    return;
+  }
+  md.appendMarkdown(
+    `$(dashboard) ${vscode.l10n.t(
+      "Metered estimate — context {0} tokens, session ~${1}",
+      formatTokens(cost.contextTokens),
+      cost.costUsd.toFixed(2),
+    )}\n\n`,
+  );
+}
 
 interface ProviderState {
   provider: UsageProvider;
@@ -180,6 +219,9 @@ function buildTooltip(state: ProviderState): vscode.MarkdownString {
     }
     if (snapshot.plan) {
       md.appendMarkdown(`${vscode.l10n.t("Plan: {0}", snapshot.plan)}\n\n`);
+    }
+    if (provider.id === "claude") {
+      appendSessionCost(md);
     }
     md.appendMarkdown(`_${vscode.l10n.t("Updated {0}", snapshot.fetchedAt.toLocaleTimeString())}_\n\n`);
   }
