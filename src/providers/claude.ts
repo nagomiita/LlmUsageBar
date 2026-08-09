@@ -74,19 +74,18 @@ export function accountFromClaudeConfig(value: unknown): AccountInfo | undefined
   return displayName || email || organization ? { displayName, email, organization } : undefined;
 }
 
-function readLoginFromPaths(paths: string[]): ClaudeLogin {
-  const accessToken = readAccessTokenFromPaths(paths);
+function readAccountFromPaths(paths: string[]): AccountInfo | undefined {
   for (const credPath of paths) {
     try {
       const account = accountFromClaudeConfig(JSON.parse(fs.readFileSync(credPath, "utf8")) as unknown);
       if (account) {
-        return { accessToken, account };
+        return account;
       }
     } catch {
-      // The token reader already validates and reports credential file failures.
+      // Account metadata is optional; token lookup reports authentication failures.
     }
   }
-  return { accessToken };
+  return undefined;
 }
 
 export function readAccessTokenFromPaths(paths: string[]): string {
@@ -164,18 +163,19 @@ export function readAccessTokenFromSources(
   }
 }
 
-function readAccessToken(): string {
-  return readAccessTokenFromSources(candidateCredentialPaths());
+export function readLoginFromSources(
+  paths: string[],
+  keychainReader: () => string | undefined = readClaudeKeychainPayload,
+): ClaudeLogin {
+  // Claude Code may split the token (Keychain) and profile metadata (~/.claude.json).
+  return {
+    accessToken: readAccessTokenFromSources(paths, keychainReader),
+    account: readAccountFromPaths(paths),
+  };
 }
 
 function readLogin(): ClaudeLogin {
-  const paths = candidateCredentialPaths();
-  try {
-    return readLoginFromPaths(paths);
-  } catch {
-    // Preserve the keychain fallback behavior when credential files have no usable token.
-    return { accessToken: readAccessToken() };
-  }
+  return readLoginFromSources(candidateCredentialPaths());
 }
 
 interface UsageBucket {

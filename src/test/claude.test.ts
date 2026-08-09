@@ -8,6 +8,7 @@ import {
   parseClaudeUsage,
   readAccessTokenFromPaths,
   readAccessTokenFromSources,
+  readLoginFromSources,
 } from "../providers/claude";
 import { ProviderError } from "../types";
 
@@ -134,6 +135,21 @@ test("reads access token from macOS Claude Code keychain payload fallback", () =
   });
 
   assert.equal(readAccessTokenFromSources([missingCurrent, missingLegacy], () => keychainPayload), "keychain-token");
+});
+
+test("combines a keychain token with account metadata from the Claude config", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "llm-usage-bar-claude-"));
+  const config = path.join(dir, ".claude.json");
+  fs.writeFileSync(
+    config,
+    JSON.stringify({ oauthAccount: { displayName: "Ada", emailAddress: "ada@example.com" } }),
+  );
+  const keychainPayload = JSON.stringify({ claudeAiOauth: { accessToken: "keychain-token" } });
+
+  assert.deepEqual(readLoginFromSources([config], () => keychainPayload), {
+    accessToken: "keychain-token",
+    account: { displayName: "Ada", email: "ada@example.com", organization: undefined },
+  });
 });
 
 test("ignores malformed Claude keychain payload and reports not-logged-in", () => {
