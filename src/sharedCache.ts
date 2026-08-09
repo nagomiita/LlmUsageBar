@@ -1,6 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
-import type { CreditInfo, UsageSnapshot } from "./types";
+import type { AccountInfo, CreditInfo, UsageSnapshot } from "./types";
 
 /**
  * File-based snapshot cache shared by every VS Code window running this
@@ -21,6 +21,7 @@ interface SerializedSnapshot {
   windows: SerializedWindow[];
   plan?: string;
   credits?: CreditInfo;
+  account?: AccountInfo;
   fetchedAt: string;
 }
 
@@ -49,6 +50,7 @@ export function readSharedCache(dir: string, providerId: string): UsageSnapshot 
       })),
       plan: raw.plan,
       credits: raw.credits,
+      account: raw.account,
       fetchedAt: new Date(raw.fetchedAt),
     };
   } catch {
@@ -66,6 +68,7 @@ export function writeSharedCache(dir: string, providerId: string, snapshot: Usag
     })),
     plan: snapshot.plan,
     credits: snapshot.credits,
+    account: snapshot.account,
     fetchedAt: snapshot.fetchedAt.toISOString(),
   };
   try {

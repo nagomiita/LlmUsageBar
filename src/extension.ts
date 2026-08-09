@@ -174,6 +174,16 @@ function buildTooltip(state: ProviderState): vscode.MarkdownString {
     });
     md.appendCodeblock(lines.join("\n"), "text");
     md.appendMarkdown(`\n`);
+    if (snapshot.account) {
+      const { displayName, email, organization } = snapshot.account;
+      const identity = displayName && email && displayName !== email ? `${displayName} (${email})` : displayName ?? email;
+      if (identity) {
+        md.appendMarkdown(`${vscode.l10n.t("Account: {0}", identity)}\n\n`);
+      }
+      if (organization) {
+        md.appendMarkdown(`${vscode.l10n.t("Organization: {0}", organization)}\n\n`);
+      }
+    }
     const atRisk = snapshot.windows.filter((w) => state.pace.get(w.label)?.willHitBeforeReset);
     if (atRisk.length > 0) {
       for (const w of atRisk) {

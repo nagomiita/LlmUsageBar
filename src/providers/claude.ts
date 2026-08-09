@@ -2,7 +2,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { execFileSync } from "child_process";
-import { ProviderError, type UsageProvider, type UsageSnapshot, type UsageWindow } from "../types";
+import { ProviderError, type AccountInfo, type UsageProvider, type UsageSnapshot, type UsageWindow } from "../types";
 
 const USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
 const CLAUDE_KEYCHAIN_SERVICE = "Claude Code-credentials";
@@ -12,6 +12,11 @@ interface ClaudeCredentials {
     accessToken?: string;
     expiresAt?: number;
   };
+}
+
+interface ClaudeLogin {
+  accessToken: string;
+  account?: AccountInfo;
 }
 
 function candidateCredentialPaths(): string[] {
@@ -47,6 +52,41 @@ function findAccessToken(value: unknown): string | undefined {
     }
   }
   return undefined;
+}
+
+/** Read the user-facing identity cached by Claude Code alongside its OAuth session. */
+export function accountFromClaudeConfig(value: unknown): AccountInfo | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const oauthAccount = (value as Record<string, unknown>).oauthAccount;
+  if (!oauthAccount || typeof oauthAccount !== "object") {
+    return undefined;
+  }
+  const raw = oauthAccount as Record<string, unknown>;
+  const stringValue = (key: string) => {
+    const candidate = raw[key];
+    return typeof candidate === "string" && candidate.trim().length > 0 ? candidate.trim() : undefined;
+  };
+  const displayName = stringValue("displayName");
+  const email = stringValue("emailAddress");
+  const organization = stringValue("organizationName");
+  return displayName || email || organization ? { displayName, email, organization } : undefined;
+}
+
+function readLoginFromPaths(paths: string[]): ClaudeLogin {
+  const accessToken = readAccessTokenFromPaths(paths);
+  for (const credPath of paths) {
+    try {
+      const account = accountFromClaudeConfig(JSON.parse(fs.readFileSync(credPath, "utf8")) as unknown);
+      if (account) {
+        return { accessToken, account };
+      }
+    } catch {
+      // The token reader already validates and reports credential file failures.
+    }
+  }
+  return { accessToken };
 }
 
 export function readAccessTokenFromPaths(paths: string[]): string {
@@ -128,6 +168,16 @@ function readAccessToken(): string {
   return readAccessTokenFromSources(candidateCredentialPaths());
 }
 
+function readLogin(): ClaudeLogin {
+  const paths = candidateCredentialPaths();
+  try {
+    return readLoginFromPaths(paths);
+  } catch {
+    // Preserve the keychain fallback behavior when credential files have no usable token.
+    return { accessToken: readAccessToken() };
+  }
+}
+
 interface UsageBucket {
   utilization?: number;
   resets_at?: string;
@@ -187,7 +237,7 @@ export class ClaudeProvider implements UsageProvider {
   readonly minPollIntervalSeconds = 600;
 
   async fetchUsage(): Promise<UsageSnapshot> {
-    const token = readAccessToken();
+    const { accessToken: token, account } = readLogin();
     const res = await fetch(USAGE_URL, {
       headers: {
         Authorization: `Bearer ${token}`,
@@ -208,6 +258,6 @@ export class ClaudeProvider implements UsageProvider {
       throw new ProviderError(`Claude usage API returned HTTP ${res.status}.`, "http");
     }
     const body = (await res.json()) as Record<string, unknown>;
-    return parseClaudeUsage(body, new Date());
+    return { ...parseClaudeUsage(body, new Date()), account };
   }
 }

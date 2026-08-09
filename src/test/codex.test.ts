@@ -1,9 +1,21 @@
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
-import { parseCodexUsage } from "../providers/codex";
+import { accountFromIdToken, parseCodexUsage } from "../providers/codex";
 import { ProviderError } from "../types";
 
 const NOW = new Date("2026-07-05T04:00:00Z");
+
+function unsignedJwt(payload: Record<string, unknown>): string {
+  return `header.${Buffer.from(JSON.stringify(payload)).toString("base64url")}.signature`;
+}
+
+test("reads account identity from the Codex ID token", () => {
+  assert.deepEqual(accountFromIdToken(unsignedJwt({ name: "Ada", email: "ada@example.com" })), {
+    displayName: "Ada",
+    email: "ada@example.com",
+  });
+  assert.equal(accountFromIdToken("invalid"), undefined);
+});
 
 // Shape observed live from GET https://chatgpt.com/backend-api/wham/usage (2026-07-05).
 // Note: the key is `rate_limit` (singular), unlike CodexBar's docs which say `rate_limits`.

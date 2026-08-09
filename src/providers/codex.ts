@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { ProviderError, type UsageProvider, type UsageSnapshot, type UsageWindow } from "../types";
+import { ProviderError, type AccountInfo, type UsageProvider, type UsageSnapshot, type UsageWindow } from "../types";
 
 const USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
 
@@ -9,10 +9,34 @@ interface CodexAuth {
   tokens?: {
     access_token?: string;
     account_id?: string;
+    id_token?: string;
   };
 }
 
-function readAuth(): { accessToken: string; accountId?: string } {
+function nonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+/** Decode non-sensitive identity claims from a JWT without validating it. Authentication still uses the access token. */
+export function accountFromIdToken(idToken: string | undefined): AccountInfo | undefined {
+  if (!idToken) {
+    return undefined;
+  }
+  try {
+    const parts = idToken.split(".");
+    if (parts.length < 2) {
+      return undefined;
+    }
+    const claims = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8")) as Record<string, unknown>;
+    const displayName = nonEmptyString(claims.name);
+    const email = nonEmptyString(claims.email);
+    return displayName || email ? { displayName, email } : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function readAuth(): { accessToken: string; accountId?: string; account?: AccountInfo } {
   const codexHome = process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex");
   const authPath = path.join(codexHome, "auth.json");
   let raw: string;
@@ -29,7 +53,11 @@ function readAuth(): { accessToken: string; accountId?: string } {
   if (!accessToken) {
     throw new ProviderError("No access_token in Codex auth.json.", "not-logged-in");
   }
-  return { accessToken, accountId: auth.tokens?.account_id };
+  return {
+    accessToken,
+    accountId: auth.tokens?.account_id,
+    account: accountFromIdToken(auth.tokens?.id_token),
+  };
 }
 
 interface RateWindow {
@@ -110,7 +138,7 @@ export class CodexProvider implements UsageProvider {
   readonly displayName = "Codex";
 
   async fetchUsage(): Promise<UsageSnapshot> {
-    const { accessToken, accountId } = readAuth();
+    const { accessToken, accountId, account } = readAuth();
     const headers: Record<string, string> = {
       Authorization: `Bearer ${accessToken}`,
       "User-Agent": "codex-cli",
@@ -132,6 +160,6 @@ export class CodexProvider implements UsageProvider {
       throw new ProviderError(`Codex usage API returned HTTP ${res.status}.`, "http");
     }
     const body = (await res.json()) as Record<string, unknown>;
-    return parseCodexUsage(body, new Date());
+    return { ...parseCodexUsage(body, new Date()), account };
   }
 }

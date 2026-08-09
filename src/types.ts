@@ -18,11 +18,19 @@ export interface CreditInfo {
   unlimited?: boolean;
 }
 
+export interface AccountInfo {
+  displayName?: string;
+  email?: string;
+  organization?: string;
+}
+
 export interface UsageSnapshot {
   windows: UsageWindow[];
   plan?: string;
   /** Present only when the account actually has credits / extra usage enabled. */
   credits?: CreditInfo;
+  /** Human-readable identity from the CLI's local login metadata. */
+  account?: AccountInfo;
   fetchedAt: Date;
 }
 

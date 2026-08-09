@@ -24,6 +24,7 @@ const SNAPSHOT: UsageSnapshot = {
   ],
   plan: "plus",
   credits: { usedMinor: 91, limitMinor: 10000, exponent: 2, currency: "USD" },
+  account: { displayName: "Ada", email: "ada@example.com", organization: "Example Org" },
   fetchedAt: new Date("2026-07-05T08:00:00Z"),
 };
 
@@ -38,6 +39,7 @@ test("cache round-trips snapshots with dates revived", () => {
   assert.equal(read.plan, "plus");
   assert.equal(read.windows[1].windowSeconds, 604800);
   assert.deepEqual(read.credits, SNAPSHOT.credits);
+  assert.deepEqual(read.account, SNAPSHOT.account);
 });
 
 test("cooldown round-trips and defaults to 0", () => {

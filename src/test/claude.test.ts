@@ -3,10 +3,28 @@ import * as assert from "node:assert/strict";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { parseClaudeUsage, readAccessTokenFromPaths, readAccessTokenFromSources } from "../providers/claude";
+import {
+  accountFromClaudeConfig,
+  parseClaudeUsage,
+  readAccessTokenFromPaths,
+  readAccessTokenFromSources,
+} from "../providers/claude";
 import { ProviderError } from "../types";
 
 const NOW = new Date("2026-07-05T04:00:00Z");
+
+test("reads account identity from the Claude config", () => {
+  assert.deepEqual(
+    accountFromClaudeConfig({
+      oauthAccount: {
+        displayName: "Ada",
+        emailAddress: "ada@example.com",
+        organizationName: "Example Org",
+      },
+    }),
+    { displayName: "Ada", email: "ada@example.com", organization: "Example Org" },
+  );
+});
 
 // Shape observed live from GET https://api.anthropic.com/api/oauth/usage (2026-07-05).
 function fixture() {
