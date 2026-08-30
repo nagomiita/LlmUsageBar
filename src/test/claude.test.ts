@@ -64,6 +64,65 @@ test("skips null and malformed buckets", () => {
   assert.equal(snap.windows[0].resetsAt, undefined);
 });
 
+// Shape observed live on 2026-08-30: scoped model limits only appear in the
+// `limits` array, not as top-level buckets.
+test("parses the limits array including model-scoped windows like Fable", () => {
+  const body = {
+    ...fixture(),
+    limits: [
+      { kind: "session", group: "session", percent: 30, resets_at: "2026-07-05T06:29:59.836Z", is_active: false },
+      { kind: "weekly_all", group: "weekly", percent: 50, resets_at: "2026-07-10T15:59:59.836Z", is_active: false },
+      {
+        kind: "weekly_scoped",
+        group: "weekly",
+        percent: 34,
+        resets_at: "2026-07-10T15:59:59.900Z",
+        scope: { model: { id: null, display_name: "Fable" }, surface: null },
+        is_active: true,
+      },
+    ],
+  };
+  const snap = parseClaudeUsage(body, NOW);
+  // Legacy buckets must not duplicate the windows already covered by limits.
+  assert.deepEqual(
+    snap.windows.map((w) => [w.label, w.usedPercent]),
+    [
+      ["5h", 30],
+      ["7d", 50],
+      ["7d Fable", 34],
+    ],
+  );
+  assert.equal(snap.windows[2].resetsAt?.toISOString(), "2026-07-10T15:59:59.900Z");
+  assert.equal(snap.windows[2].windowSeconds, 7 * 86400);
+});
+
+test("orders windows by length with plain windows before scoped ones", () => {
+  const body = {
+    limits: [
+      {
+        kind: "weekly_scoped",
+        group: "weekly",
+        percent: 34,
+        scope: { model: { display_name: "Fable" } },
+      },
+      { kind: "weekly_all", group: "weekly", percent: 50 },
+      { kind: "session", group: "session", percent: 30 },
+    ],
+  };
+  assert.deepEqual(
+    parseClaudeUsage(body, NOW).windows.map((w) => w.label),
+    ["5h", "7d", "7d Fable"],
+  );
+});
+
+test("ignores malformed limits entries and falls back to legacy buckets", () => {
+  const snap = parseClaudeUsage({ ...fixture(), limits: [{ percent: "bad" }, {}] }, NOW);
+  assert.deepEqual(
+    snap.windows.map((w) => w.label),
+    ["5h", "7d"],
+  );
+});
+
 test("parses extra usage credits when enabled", () => {
   const body = {
     ...fixture(),

@@ -192,14 +192,68 @@ const WINDOW_KEYS: Array<{ key: string; label: string; seconds: number }> = [
   { key: "seven_day_oauth_apps", label: "7d Apps", seconds: 7 * DAY },
 ];
 
+interface LimitEntry {
+  kind?: string;
+  group?: string;
+  percent?: number;
+  resets_at?: string | null;
+  scope?: { model?: { display_name?: string | null } | null } | null;
+}
+
+/**
+ * The newer response shape lists every limit (including per-model scoped ones
+ * like the Fable weekly cap) in a `limits` array; the legacy top-level buckets
+ * only cover a fixed set of window keys.
+ */
+function windowFromLimit(entry: LimitEntry): UsageWindow | undefined {
+  if (typeof entry.percent !== "number") {
+    return undefined;
+  }
+  const kind = entry.kind ?? "";
+  const group = entry.group ?? "";
+  let base: { label: string; seconds?: number };
+  if (kind === "session" || group === "session") {
+    base = { label: "5h", seconds: 5 * 3600 };
+  } else if (group === "weekly" || kind.startsWith("weekly")) {
+    base = { label: "7d", seconds: 7 * DAY };
+  } else if (group === "monthly" || kind.startsWith("monthly")) {
+    base = { label: "30d", seconds: 30 * DAY };
+  } else if (kind || group) {
+    base = { label: kind || group };
+  } else {
+    return undefined;
+  }
+  const scopeName = entry.scope?.model?.display_name;
+  return {
+    label: scopeName ? `${base.label} ${scopeName}` : base.label,
+    usedPercent: entry.percent,
+    resetsAt: entry.resets_at ? new Date(entry.resets_at) : undefined,
+    windowSeconds: base.seconds,
+  };
+}
+
 /** Parse the /api/oauth/usage response body. Exported for tests. */
 export function parseClaudeUsage(body: Record<string, unknown>, now: Date): UsageSnapshot {
   const windows: UsageWindow[] = [];
+  const seen = new Set<string>();
+  const limits = body.limits;
+  if (Array.isArray(limits)) {
+    for (const entry of limits) {
+      const window = windowFromLimit(entry as LimitEntry);
+      if (window && !seen.has(window.label)) {
+        seen.add(window.label);
+        windows.push(window);
+      }
+    }
+  }
+  // Legacy buckets fill in anything the limits array didn't cover (and are the
+  // only source on older API responses).
   for (const { key, label, seconds } of WINDOW_KEYS) {
     const bucket = body[key] as UsageBucket | null | undefined;
-    if (!bucket || typeof bucket.utilization !== "number") {
+    if (!bucket || typeof bucket.utilization !== "number" || seen.has(label)) {
       continue;
     }
+    seen.add(label);
     windows.push({
       label,
       usedPercent: bucket.utilization,
@@ -210,6 +264,14 @@ export function parseClaudeUsage(body: Record<string, unknown>, now: Date): Usag
   if (windows.length === 0) {
     throw new ProviderError("Claude usage API response had no recognizable windows.", "parse");
   }
+  // Short windows first, and the plain window before model-scoped ones of the
+  // same length ("5h", "7d", "7d Fable", …) regardless of which source
+  // contributed them; ties keep API order.
+  windows.sort(
+    (a, b) =>
+      (a.windowSeconds ?? Number.MAX_SAFE_INTEGER) - (b.windowSeconds ?? Number.MAX_SAFE_INTEGER) ||
+      Number(a.label.includes(" ")) - Number(b.label.includes(" ")),
+  );
 
   // "Extra usage" credits cover overflow beyond the plan limits when enabled.
   let credits: UsageSnapshot["credits"];

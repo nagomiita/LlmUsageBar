@@ -15,6 +15,7 @@ interface SerializedWindow {
   usedPercent: number;
   resetsAt?: string;
   windowSeconds?: number;
+  quota?: { used: number; included: number };
 }
 
 interface SerializedSnapshot {
@@ -47,6 +48,7 @@ export function readSharedCache(dir: string, providerId: string): UsageSnapshot 
         usedPercent: w.usedPercent,
         resetsAt: w.resetsAt ? new Date(w.resetsAt) : undefined,
         windowSeconds: w.windowSeconds,
+        quota: w.quota,
       })),
       plan: raw.plan,
       credits: raw.credits,
@@ -65,6 +67,7 @@ export function writeSharedCache(dir: string, providerId: string, snapshot: Usag
       usedPercent: w.usedPercent,
       resetsAt: w.resetsAt?.toISOString(),
       windowSeconds: w.windowSeconds,
+      quota: w.quota,
     })),
     plan: snapshot.plan,
     credits: snapshot.credits,

@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { ClaudeProvider } from "./providers/claude";
 import { CodexProvider } from "./providers/codex";
+import { GithubProvider } from "./providers/github";
 import { ProviderError, type UsageProvider, type UsageSnapshot } from "./types";
 import { appendSample, computePace, type PaceResult, type Sample } from "./pace";
 import { displayWidth, renderBar, renderGaugeLine } from "./gauge";
@@ -103,8 +104,22 @@ function formatCountdown(resetsAt: Date, now: Date): string {
   return vscode.l10n.t("{0}m", minutes);
 }
 
+/** Wall-clock reset time in the machine's local timezone: "15:30", or "9/4 15:30" on another day. */
+function formatClock(at: Date, now: Date): string {
+  const time = at.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  const sameDay =
+    at.getFullYear() === now.getFullYear() && at.getMonth() === now.getMonth() && at.getDate() === now.getDate();
+  if (sameDay) {
+    return time;
+  }
+  return `${at.toLocaleDateString(undefined, { month: "numeric", day: "numeric" })} ${time}`;
+}
+
 /** "5h" → "5時間", "7d Opus" → "7日 Opus" when the display language localizes the units. */
 function localizeWindowLabel(label: string): string {
+  if (label === "mo") {
+    return vscode.l10n.t("mo");
+  }
   return label.replace(/^(\d+)([hd])/, (_match, n: string, unit: string) =>
     unit === "h" ? vscode.l10n.t("{0}h", n) : vscode.l10n.t("{0}d", n),
   );
@@ -115,12 +130,15 @@ function statusText(state: ProviderState): string {
   if (!snapshot) {
     return lastError ? `$(warning) ${provider.shortName} —` : `$(sync~spin) ${provider.shortName}`;
   }
-  // Keep the bar compact: show at most the first two windows (session + weekly).
+  // Keep the bar compact: show at most the first N windows (default: session + weekly;
+  // raise statusBarWindows to also surface model-scoped ones like "7d Fable").
   // On fetch errors, keep the last known data visible and just append a warning icon.
   // "↗" marks windows on pace to hit their limit before the reset.
-  const format = vscode.workspace.getConfiguration(CONFIG_SECTION).get<string>("displayFormat", "percent");
+  const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+  const format = config.get<string>("displayFormat", "percent");
+  const maxWindows = Math.max(1, config.get<number>("statusBarWindows", 2));
   const parts = snapshot.windows
-    .slice(0, 2)
+    .slice(0, maxWindows)
     .map((w) => {
       const onPaceToHit = state.pace.get(w.label)?.willHitBeforeReset ? "↗" : "";
       const pct = `${Math.round(w.usedPercent)}%`;
@@ -149,6 +167,9 @@ function errorSummary(error: Error, providerName: string): string {
         return vscode.l10n.t("Failed to fetch usage data from the {0} API.", providerName);
       case "parse":
         return vscode.l10n.t("Failed to parse the {0} usage API response.", providerName);
+      case "setup":
+        // Setup messages are constant strings with their own l10n bundle entries.
+        return vscode.l10n.t(error.message);
     }
   }
   return error.message;
@@ -168,12 +189,24 @@ function buildTooltip(state: ProviderState): vscode.MarkdownString {
     const labels = snapshot.windows.map((w) => localizeWindowLabel(w.label));
     const labelWidth = Math.max(...labels.map(displayWidth)) + 2;
     const lines = snapshot.windows.map((w, i) => {
-      const reset = w.resetsAt ? formatCountdown(w.resetsAt, now) : "";
+      // Countdown plus the wall-clock reset time, e.g. "2h 13m (18:09)" / "4d 17h (9/4 12:00)".
+      const reset = w.resetsAt ? `${formatCountdown(w.resetsAt, now)} (${formatClock(w.resetsAt, now)})` : "";
       const risk = state.pace.get(w.label)?.willHitBeforeReset ? " ↗" : "";
       return renderGaugeLine(labels[i], w.usedPercent, `${reset}${risk}`, labelWidth);
     });
     md.appendCodeblock(lines.join("\n"), "text");
     md.appendMarkdown(`\n`);
+    for (const w of snapshot.windows) {
+      if (w.quota) {
+        md.appendMarkdown(
+          `${vscode.l10n.t(
+            "Actions minutes: {0} used / {1} included",
+            w.quota.used.toLocaleString(),
+            w.quota.included.toLocaleString(),
+          )}\n\n`,
+        );
+      }
+    }
     if (snapshot.account) {
       const { displayName, email, organization } = snapshot.account;
       const identity = displayName && email && displayName !== email ? `${displayName} (${email})` : displayName ?? email;
@@ -263,7 +296,13 @@ function applyColor(state: ProviderState): void {
 }
 
 export function activate(context: vscode.ExtensionContext): void {
-  const providers: UsageProvider[] = [new ClaudeProvider(), new CodexProvider()];
+  const providers: UsageProvider[] = [
+    new ClaudeProvider(),
+    new CodexProvider(),
+    new GithubProvider(() =>
+      vscode.workspace.getConfiguration(CONFIG_SECTION).get<number>("github.includedMinutesPerMonth", 0),
+    ),
+  ];
   const states = new Map<string, ProviderState>();
   // Shared across every window of this profile — the cross-window cache lives here.
   const cacheDir = context.globalStorageUri.fsPath;

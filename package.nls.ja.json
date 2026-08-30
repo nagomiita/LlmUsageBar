@@ -8,5 +8,8 @@
   "llmUsageBar.config.errorThresholdPercent": "いずれかのウィンドウの使用率がこの値に達したらエラー色で表示します。",
   "llmUsageBar.config.claude.enabled": "Claude の使用量を表示します。",
   "llmUsageBar.config.claude.showSessionCost": "現在の Claude Code セッションの従量課金の概算を、ローカルの記録から計算してツールチップに表示します。",
-  "llmUsageBar.config.codex.enabled": "Codex の使用量を表示します。"
+  "llmUsageBar.config.codex.enabled": "Codex の使用量を表示します。",
+  "llmUsageBar.config.github.enabled": "GitHub Actions の無料枠(分)の使用状況を表示します(GitHub CLI のログインを利用。課金 API には \"user\" スコープが必要)。",
+  "llmUsageBar.config.github.includedMinutesPerMonth": "GitHub Actions の月間無料枠(分)。0 = アカウントのプランから自動判定(Free 2000 / Pro 3000)。API が枠を返さない場合にのみ使用されます。",
+  "llmUsageBar.config.statusBarWindows": "ステータスバーにプロバイダごとに表示するウィンドウ数(ツールチップには常に全ウィンドウを表示)。3 にすると \"7d Fable\" などモデル別ウィンドウも表示されます。"
 }

@@ -1,10 +1,12 @@
 export interface UsageWindow {
-  /** Short label like "5h", "7d", "7d Opus" */
+  /** Short label like "5h", "7d", "7d Opus", "mo" */
   label: string;
   usedPercent: number;
   resetsAt?: Date;
   /** Length of the limit window, used to scale burn-rate measurement. */
   windowSeconds?: number;
+  /** Absolute quantities behind usedPercent (e.g. GitHub Actions minutes). */
+  quota?: { used: number; included: number };
 }
 
 export interface CreditInfo {
@@ -34,7 +36,8 @@ export interface UsageSnapshot {
   fetchedAt: Date;
 }
 
-export type ProviderErrorKind = "not-logged-in" | "rate-limited" | "http" | "parse";
+/** "setup" carries a self-contained, user-actionable message shown verbatim (after l10n lookup). */
+export type ProviderErrorKind = "not-logged-in" | "rate-limited" | "http" | "parse" | "setup";
 
 export class ProviderError extends Error {
   constructor(message: string, public readonly kind: ProviderErrorKind) {

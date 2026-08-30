@@ -8,5 +8,8 @@
   "llmUsageBar.config.errorThresholdPercent": "Show error color when any window reaches this usage percent.",
   "llmUsageBar.config.claude.enabled": "Show Claude usage.",
   "llmUsageBar.config.claude.showSessionCost": "Show a pay-as-you-go cost estimate for the active Claude Code session in the tooltip, computed from the local transcript.",
-  "llmUsageBar.config.codex.enabled": "Show Codex usage."
+  "llmUsageBar.config.codex.enabled": "Show Codex usage.",
+  "llmUsageBar.config.github.enabled": "Show GitHub Actions included-minutes usage (uses the GitHub CLI login; billing API needs the \"user\" scope).",
+  "llmUsageBar.config.github.includedMinutesPerMonth": "Included GitHub Actions minutes per month. 0 = derive from the account plan (Free 2000 / Pro 3000). Only used when the API does not report the quota itself.",
+  "llmUsageBar.config.statusBarWindows": "How many usage windows to show in the status bar per provider (the tooltip always shows all). Set 3 to also show model-scoped windows like \"7d Fable\"."
 }
