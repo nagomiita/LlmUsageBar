@@ -2,7 +2,7 @@
   "name": "llm-usage-bar",
   "displayName": "LLM Usage Bar",
   "description": "Show Claude Code / Codex CLI rate-limit usage in the VS Code status bar",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "publisher": "takeshi",
   "private": true,
   "license": "MIT",
@@ -30,6 +30,10 @@
       {
         "command": "llmUsageBar.checkForUpdates",
         "title": "%llmUsageBar.command.checkForUpdates.title%"
+      },
+      {
+        "command": "llmUsageBar.startUsageWindows",
+        "title": "%llmUsageBar.command.startUsageWindows.title%"
       }
     ],
     "configuration": {
@@ -98,6 +102,61 @@
           "type": "boolean",
           "default": true,
           "description": "%llmUsageBar.config.checkForUpdates%"
+        },
+        "llmUsageBar.windowAnchor.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "%llmUsageBar.config.windowAnchor.enabled%"
+        },
+        "llmUsageBar.windowAnchor.times": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^([01]?\\d|2[0-3]):[0-5]\\d$"
+          },
+          "default": [
+            "07:00",
+            "12:00",
+            "17:00"
+          ],
+          "description": "%llmUsageBar.config.windowAnchor.times%"
+        },
+        "llmUsageBar.windowAnchor.weekdaysOnly": {
+          "type": "boolean",
+          "default": true,
+          "description": "%llmUsageBar.config.windowAnchor.weekdaysOnly%"
+        },
+        "llmUsageBar.windowAnchor.graceMinutes": {
+          "type": "number",
+          "default": 30,
+          "minimum": 1,
+          "maximum": 120,
+          "description": "%llmUsageBar.config.windowAnchor.graceMinutes%"
+        },
+        "llmUsageBar.windowAnchor.providers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "claude",
+              "codex"
+            ]
+          },
+          "default": [
+            "claude",
+            "codex"
+          ],
+          "description": "%llmUsageBar.config.windowAnchor.providers%"
+        },
+        "llmUsageBar.windowAnchor.claudeCommand": {
+          "type": "string",
+          "default": "",
+          "description": "%llmUsageBar.config.windowAnchor.claudeCommand%"
+        },
+        "llmUsageBar.windowAnchor.codexCommand": {
+          "type": "string",
+          "default": "",
+          "description": "%llmUsageBar.config.windowAnchor.codexCommand%"
         }
       }
     }

@@ -6,13 +6,16 @@ import { ProviderError, type UsageProvider, type UsageSnapshot } from "./types";
 import { appendSample, computePace, type PaceResult, type Sample } from "./pace";
 import { displayWidth, renderBar, renderGaugeLine } from "./gauge";
 import {
+  cleanupOnceMarkers,
   readCooldownUntil,
   readSharedCache,
   releaseFetchLock,
   tryAcquireFetchLock,
+  tryAcquireOnceMarker,
   writeCooldown,
   writeSharedCache,
 } from "./sharedCache";
+import { defaultGreetingCommand, dueAnchors, hasActiveSessionWindow, nextAnchor, runGreeting } from "./anchor";
 import { checkForUpdatesInBackground, installLatestRelease } from "./update/githubRelease";
 import { estimateSessionCost } from "./cost";
 
@@ -175,6 +178,33 @@ function errorSummary(error: Error, providerName: string): string {
   return error.message;
 }
 
+/** One line confirming window anchoring is on for this provider and when it next fires. */
+function appendAnchorStatus(md: vscode.MarkdownString, providerId: string): void {
+  if (providerId !== "claude" && providerId !== "codex") {
+    return;
+  }
+  const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+  if (
+    !config.get<boolean>("windowAnchor.enabled", false) ||
+    !config.get<string[]>("windowAnchor.providers", ["claude", "codex"]).includes(providerId)
+  ) {
+    return;
+  }
+  const now = new Date();
+  const next = nextAnchor(
+    config.get<string[]>("windowAnchor.times", ["07:00", "12:00", "17:00"]),
+    now,
+    config.get<boolean>("windowAnchor.weekdaysOnly", true),
+  );
+  md.appendMarkdown(
+    `$(pin) ${
+      next
+        ? vscode.l10n.t("Window anchor: on — next start {0}", formatClock(next, now))
+        : vscode.l10n.t("Window anchor: on — no valid times configured")
+    }\n\n`,
+  );
+}
+
 function buildTooltip(state: ProviderState): vscode.MarkdownString {
   const { provider, snapshot, lastError } = state;
   const md = new vscode.MarkdownString();
@@ -268,6 +298,8 @@ function buildTooltip(state: ProviderState): vscode.MarkdownString {
     }
     md.appendMarkdown(`_${vscode.l10n.t("Updated {0}", snapshot.fetchedAt.toLocaleTimeString())}_\n\n`);
   }
+  // Shown even without a snapshot, so the anchor's on/off state is always visible.
+  appendAnchorStatus(md, provider.id);
   md.appendMarkdown(vscode.l10n.t("Click to refresh."));
   return md;
 }
@@ -307,6 +339,15 @@ export function activate(context: vscode.ExtensionContext): void {
   // Shared across every window of this profile — the cross-window cache lives here.
   const cacheDir = context.globalStorageUri.fsPath;
   let timer: NodeJS.Timeout | undefined;
+  // Anchors need finer granularity than the poll interval; the check is a
+  // no-op (no API calls) unless an anchor is actually due and unclaimed.
+  const anchorTimer = setInterval(() => void checkAnchors(), 60_000);
+  const output = vscode.window.createOutputChannel("LLM Usage Bar");
+  context.subscriptions.push(output);
+
+  function log(message: string): void {
+    output.appendLine(`[${new Date().toLocaleString()}] ${message}`);
+  }
 
   function effectiveIntervalMs(state: ProviderState): number {
     const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
@@ -440,6 +481,75 @@ export function activate(context: vscode.ExtensionContext): void {
     await Promise.all([...states.values()].map((s) => refreshOne(s, force)));
   }
 
+  // ---- Window anchoring: start the session rate-limit window at fixed times ----
+
+  const ANCHOR_PROVIDER_IDS = ["claude", "codex"];
+
+  type AnchorOutcome = "started" | "already-active" | "not-logged-in" | "failed";
+
+  async function fireAnchor(state: ProviderState, reason: string): Promise<AnchorOutcome> {
+    const id = state.provider.id;
+    // Fresh usage first: a window another machine already started (or the
+    // user's own morning prompt) means there is nothing to do here.
+    await refreshOne(state, true);
+    if (state.lastError instanceof ProviderError && state.lastError.kind === "not-logged-in") {
+      log(`anchor ${id} (${reason}): skipped — not signed in`);
+      return "not-logged-in";
+    }
+    if (hasActiveSessionWindow(state.snapshot, new Date())) {
+      log(`anchor ${id} (${reason}): skipped — session window already active`);
+      return "already-active";
+    }
+    const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+    const custom = config.get<string>(`windowAnchor.${id}Command`, "").trim();
+    const command = custom || defaultGreetingCommand(id);
+    if (!command) {
+      return "failed";
+    }
+    log(`anchor ${id} (${reason}): running: ${command}`);
+    const result = await runGreeting(command);
+    log(`anchor ${id} (${reason}): ${result.ok ? "ok" : "FAILED"}${result.detail ? ` — ${result.detail}` : ""}`);
+    if (result.ok) {
+      // Refetch once the usage API has caught up, so the new reset time shows.
+      setTimeout(() => void refreshOne(state, true), 60_000);
+    }
+    return result.ok ? "started" : "failed";
+  }
+
+  function anchorTargets(config: vscode.WorkspaceConfiguration): ProviderState[] {
+    const wanted = config.get<string[]>("windowAnchor.providers", ["claude", "codex"]);
+    return ANCHOR_PROVIDER_IDS.filter(
+      (id) => wanted.includes(id) && config.get<boolean>(`${id}.enabled`, true) && states.has(id),
+    ).map((id) => states.get(id)!);
+  }
+
+  async function checkAnchors(): Promise<void> {
+    const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+    if (!config.get<boolean>("windowAnchor.enabled", false)) {
+      return;
+    }
+    const due = dueAnchors(
+      config.get<string[]>("windowAnchor.times", ["07:00", "12:00", "17:00"]),
+      new Date(),
+      config.get<number>("windowAnchor.graceMinutes", 30),
+      config.get<boolean>("windowAnchor.weekdaysOnly", true),
+    );
+    if (due.length === 0) {
+      return;
+    }
+    cleanupOnceMarkers(cacheDir, "anchor-", 3 * 24 * 60 * 60 * 1000);
+    for (const state of anchorTargets(config)) {
+      for (const anchor of due) {
+        // First VS Code window on this machine wins; cross-machine duplicates
+        // are prevented by the active-window check inside fireAnchor.
+        if (!tryAcquireOnceMarker(cacheDir, `anchor-${state.provider.id}-${anchor.key}`)) {
+          continue;
+        }
+        await fireAnchor(state, anchor.key);
+      }
+    }
+  }
+
   function schedule(): void {
     if (timer) {
       clearInterval(timer);
@@ -470,6 +580,35 @@ export function activate(context: vscode.ExtensionContext): void {
       }
       void refreshAll(true);
     }),
+    vscode.commands.registerCommand("llmUsageBar.startUsageWindows", async () => {
+      const targets = anchorTargets(vscode.workspace.getConfiguration(CONFIG_SECTION));
+      if (targets.length === 0) {
+        void vscode.window.showInformationMessage(
+          vscode.l10n.t("LLM Usage Bar: no target providers are enabled for window anchoring."),
+        );
+        return;
+      }
+      const outcomes = await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: vscode.l10n.t("Starting usage windows…") },
+        async () => {
+          const lines: string[] = [];
+          for (const state of targets) {
+            const outcome = await fireAnchor(state, "manual");
+            const text =
+              outcome === "started"
+                ? vscode.l10n.t("window started")
+                : outcome === "already-active"
+                  ? vscode.l10n.t("window already active")
+                  : outcome === "not-logged-in"
+                    ? vscode.l10n.t("not signed in")
+                    : vscode.l10n.t("failed — see Output → LLM Usage Bar");
+            lines.push(`${state.provider.displayName}: ${text}`);
+          }
+          return lines;
+        },
+      );
+      void vscode.window.showInformationMessage(`LLM Usage Bar — ${outcomes.join(" / ")}`);
+    }),
     vscode.commands.registerCommand("llmUsageBar.checkForUpdates", async () => {
       const installed = String(context.extension.packageJSON.version ?? "");
       try {
@@ -489,6 +628,7 @@ export function activate(context: vscode.ExtensionContext): void {
       if (timer) {
         clearInterval(timer);
       }
+      clearInterval(anchorTimer);
     }),
   );
 
@@ -497,6 +637,7 @@ export function activate(context: vscode.ExtensionContext): void {
   }
   void refreshAll();
   schedule();
+  void checkAnchors();
   void checkForUpdatesInBackground(context);
 }
 

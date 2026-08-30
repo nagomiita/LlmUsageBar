@@ -1,6 +1,7 @@
 {
   "llmUsageBar.command.refresh.title": "LLM Usage Bar: 今すぐ更新",
   "llmUsageBar.command.checkForUpdates.title": "LLM Usage Bar: 更新を確認",
+  "llmUsageBar.command.startUsageWindows.title": "LLM Usage Bar: 使用枠ウィンドウを今すぐ開始",
   "llmUsageBar.config.checkForUpdates": "1日1回 GitHub Releases に新しいバージョンがないか確認します。",
   "llmUsageBar.config.displayFormat": "ステータスバーの表示形式: 使用率(%)、小さなバーゲージ、または両方。",
   "llmUsageBar.config.pollIntervalSeconds": "使用量データを取得する間隔(秒)。",
@@ -11,5 +12,12 @@
   "llmUsageBar.config.codex.enabled": "Codex の使用量を表示します。",
   "llmUsageBar.config.github.enabled": "GitHub Actions の無料枠(分)の使用状況を表示します(GitHub CLI のログインを利用。課金 API には \"user\" スコープが必要)。",
   "llmUsageBar.config.github.includedMinutesPerMonth": "GitHub Actions の月間無料枠(分)。0 = アカウントのプランから自動判定(Free 2000 / Pro 3000)。API が枠を返さない場合にのみ使用されます。",
-  "llmUsageBar.config.statusBarWindows": "ステータスバーにプロバイダごとに表示するウィンドウ数(ツールチップには常に全ウィンドウを表示)。3 にすると \"7d Fable\" などモデル別ウィンドウも表示されます。"
+  "llmUsageBar.config.statusBarWindows": "ステータスバーにプロバイダごとに表示するウィンドウ数(ツールチップには常に全ウィンドウを表示)。3 にすると \"7d Fable\" などモデル別ウィンドウも表示されます。",
+  "llmUsageBar.config.windowAnchor.enabled": "決まった時刻に CLI 経由でごく小さなプロンプトを 1 回送り、Claude / Codex のセッション制限ウィンドウ(5時間枠)を開始します。枠の開始時刻がその日の最初のプロンプトではなく業務時間に揃います(いわゆる「挨拶」運用)。消費する使用量はごくわずか。claude / codex CLI がインストール・ログイン済みであることが必要です。枠がすでに開始済みの場合(別マシンで開始済みなど)は自動でスキップします。",
+  "llmUsageBar.config.windowAnchor.times": "使用枠ウィンドウを開始するローカル時刻(HH:MM)。5 時間間隔にすると 1 日を通して境界が揃います(既定 07:00 / 12:00 / 17:00)。",
+  "llmUsageBar.config.windowAnchor.weekdaysOnly": "平日(月〜金)のみ実行します。",
+  "llmUsageBar.config.windowAnchor.graceMinutes": "指定時刻に VS Code が閉じていた・スリープしていた場合でも、この分数以内に復帰すれば実行します。それを過ぎたら次の時刻まで待ちます。",
+  "llmUsageBar.config.windowAnchor.providers": "使用枠ウィンドウを開始する対象プロバイダ。",
+  "llmUsageBar.config.windowAnchor.claudeCommand": "Claude の枠開始に使うコマンドの上書き。空 = claude --model haiku -p 'Reply with only: ok'",
+  "llmUsageBar.config.windowAnchor.codexCommand": "Codex の枠開始に使うコマンドの上書き。空 = codex exec --skip-git-repo-check --sandbox read-only 'Reply with only: ok'"
 }

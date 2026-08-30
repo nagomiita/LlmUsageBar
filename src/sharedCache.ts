@@ -115,6 +115,46 @@ export function releaseFetchLock(dir: string, providerId: string): void {
 }
 
 /**
+ * One-shot marker shared across windows: true only for the first caller on
+ * this machine (per extension profile). Used so a scheduled event — e.g. one
+ * window-anchor greeting per anchor time — fires once no matter how many
+ * VS Code windows are open. Markers persist across restarts by design.
+ */
+export function tryAcquireOnceMarker(dir: string, name: string): boolean {
+  const file = path.join(dir, `once-${name.replace(/[^A-Za-z0-9._-]/g, "-")}`);
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(file, new Date().toISOString(), { flag: "wx" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Best-effort cleanup of once-markers with the given prefix past maxAgeMs. */
+export function cleanupOnceMarkers(dir: string, prefix: string, maxAgeMs: number, now = Date.now()): void {
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(dir);
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (!entry.startsWith(`once-${prefix}`)) {
+      continue;
+    }
+    const file = path.join(dir, entry);
+    try {
+      if (now - fs.statSync(file).mtimeMs > maxAgeMs) {
+        fs.unlinkSync(file);
+      }
+    } catch {
+      // Another window may have cleaned it up first.
+    }
+  }
+}
+
+/**
  * Failure cooldown shared across windows. Without it, a fetch failure is
  * private to the window that saw it, so N windows keep independently retrying
  * a rate-limited API and hold the 429 open forever.

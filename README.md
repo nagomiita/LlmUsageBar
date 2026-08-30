@@ -38,6 +38,21 @@ GitHub の課金 API には `user` スコープが必要です。gh CLI の既�
 gh auth refresh -h github.com -s user
 ```
 
+## 使用枠アンカー(定時挨拶で 5h 枠の開始を揃える)
+
+[「挨拶ハラスメント」](https://qiita.com/inoyu-qiita/items/1953d640bc0a7c0b16fc)と呼ばれる運用 — 決まった時刻に軽いプロンプトを 1 回送り、5 時間ごとにリセットされる使用枠の開始位置を業務時間に揃える — を拡張機能が自動で行います。既定は無効(オプトイン)。Settings Sync を使っていれば設定は全端末に同期されるため、端末ごとの cron やクラウドルーティンの設定は不要です。
+
+```jsonc
+"llmUsageBar.windowAnchor.enabled": true
+```
+
+- 平日 07:00 / 12:00 / 17:00(ローカル時刻)に `claude --model haiku -p '...'` / `codex exec --skip-git-repo-check --sandbox read-only '...'` を実行して枠を開始。時刻は `windowAnchor.times` で変更可(5 時間間隔にすると境界が一日中揃う)
+- 実行前に使用量 API を確認し、枠がすでに開始済み(別マシンが先に実行した、朝すでに作業していた等)ならスキップ。同一マシンの複数 VS Code ウィンドウでも 1 回だけ実行
+- 指定時刻に VS Code が閉じていた/スリープしていた場合は、`windowAnchor.graceMinutes`(既定 30 分)以内の復帰なら追い掛けて実行。過ぎたらズレた時刻に枠を開始せず次の時刻まで待つ
+- 有効時は CC / CX のツールチップに `📌 使用枠アンカー: 有効 — 次回開始 12:00` のように次回実行時刻を常時表示(有効になっているかの確認はここで)
+- コマンドパレット「LLM Usage Bar: 使用枠ウィンドウを今すぐ開始」で手動実行可。実行ログは出力パネル「LLM Usage Bar」に記録
+- 消費はごくわずか(Claude は Haiku 1 応答)。claude / codex CLI がインストール・ログイン済みで、VS Code が起動していることが前提(枠の開始そのものはアカウント単位なので、起動中の端末が 1 台あればよい)
+
 ## 開発
 
 ```bash
@@ -64,6 +79,13 @@ npm run package:vsix  # .vsix パッケージ作成
 | `llmUsageBar.github.enabled` | true | GitHub Actions の表示 |
 | `llmUsageBar.github.includedMinutesPerMonth` | 0 | Actions の月間無料枠(分)。0 = プランから自動判定(Free 2000 / Pro 3000)。API が枠を返す場合は API 値を優先 |
 | `llmUsageBar.statusBarWindows` | 2 | ステータスバーに表示するウィンドウ数。3 で `7d Fable` などモデル別枠も表示 |
+| `llmUsageBar.windowAnchor.enabled` | false | 定時に CLI 経由で極小プロンプトを送り使用枠ウィンドウを開始(上記「使用枠アンカー」) |
+| `llmUsageBar.windowAnchor.times` | `["07:00","12:00","17:00"]` | 枠を開始するローカル時刻(HH:MM) |
+| `llmUsageBar.windowAnchor.weekdaysOnly` | true | 平日のみ実行 |
+| `llmUsageBar.windowAnchor.graceMinutes` | 30 | 指定時刻に VS Code がなくても、この分数以内の復帰なら実行 |
+| `llmUsageBar.windowAnchor.providers` | `["claude","codex"]` | 対象プロバイダ |
+| `llmUsageBar.windowAnchor.claudeCommand` | `""` | Claude の枠開始コマンドの上書き(空 = 既定コマンド) |
+| `llmUsageBar.windowAnchor.codexCommand` | `""` | Codex の枠開始コマンドの上書き(空 = 既定コマンド) |
 
 ## 注意
 

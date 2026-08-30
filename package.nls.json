@@ -1,6 +1,7 @@
 {
   "llmUsageBar.command.refresh.title": "LLM Usage Bar: Refresh Now",
   "llmUsageBar.command.checkForUpdates.title": "LLM Usage Bar: Check for Updates",
+  "llmUsageBar.command.startUsageWindows.title": "LLM Usage Bar: Start Usage Windows Now",
   "llmUsageBar.config.checkForUpdates": "Check GitHub Releases once a day for a newer version.",
   "llmUsageBar.config.displayFormat": "Status bar display format: usage percent, a small bar gauge, or both.",
   "llmUsageBar.config.pollIntervalSeconds": "How often to fetch usage data (seconds).",
@@ -11,5 +12,12 @@
   "llmUsageBar.config.codex.enabled": "Show Codex usage.",
   "llmUsageBar.config.github.enabled": "Show GitHub Actions included-minutes usage (uses the GitHub CLI login; billing API needs the \"user\" scope).",
   "llmUsageBar.config.github.includedMinutesPerMonth": "Included GitHub Actions minutes per month. 0 = derive from the account plan (Free 2000 / Pro 3000). Only used when the API does not report the quota itself.",
-  "llmUsageBar.config.statusBarWindows": "How many usage windows to show in the status bar per provider (the tooltip always shows all). Set 3 to also show model-scoped windows like \"7d Fable\"."
+  "llmUsageBar.config.statusBarWindows": "How many usage windows to show in the status bar per provider (the tooltip always shows all). Set 3 to also show model-scoped windows like \"7d Fable\".",
+  "llmUsageBar.config.windowAnchor.enabled": "Start the Claude / Codex session rate-limit window at fixed times by sending one tiny CLI prompt, so the 5-hour window boundaries align with your work hours instead of your first prompt of the day. Consumes a negligible amount of usage; requires the claude / codex CLIs to be installed and signed in. Skipped automatically when a window is already active (e.g. started on another machine).",
+  "llmUsageBar.config.windowAnchor.times": "Local times (HH:MM) at which to start a usage window. Keep them 5 hours apart so the boundaries stay aligned all day (default 07:00 / 12:00 / 17:00).",
+  "llmUsageBar.config.windowAnchor.weekdaysOnly": "Only fire anchors on weekdays (Mon–Fri).",
+  "llmUsageBar.config.windowAnchor.graceMinutes": "If VS Code was closed or asleep at the anchor time, still fire when it comes back within this many minutes; after that, wait for the next anchor.",
+  "llmUsageBar.config.windowAnchor.providers": "Which providers to start usage windows for.",
+  "llmUsageBar.config.windowAnchor.claudeCommand": "Override the command used to start a Claude window. Empty = claude --model haiku -p 'Reply with only: ok'",
+  "llmUsageBar.config.windowAnchor.codexCommand": "Override the command used to start a Codex window. Empty = codex exec --skip-git-repo-check --sandbox read-only 'Reply with only: ok'"
 }
