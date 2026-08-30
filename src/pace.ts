@@ -15,6 +15,8 @@ export interface PaceResult {
   ratePerHour: number;
   /** Rate that would exactly exhaust the remaining budget at reset time, %/hour. */
   safeRatePerHour: number;
+  /** Usage percent expected at reset time if the current rate holds, clamped to 0-100. */
+  projectedAtResetPercent: number;
   /** When 100% is reached at the current rate. Undefined when rate <= 0. */
   projectedHitAt?: Date;
   /** True when the projected hit happens before the window resets. */
@@ -73,9 +75,10 @@ export function computePace(
   const ratePerHour = (last.p - first.p) / (spanMs / 3_600_000);
   const remaining = Math.max(0, 100 - last.p);
   const safeRatePerHour = remaining / hoursToReset;
+  const projectedAtResetPercent = Math.min(100, Math.max(0, last.p + ratePerHour * hoursToReset));
 
   if (ratePerHour <= 0) {
-    return { ratePerHour, safeRatePerHour, willHitBeforeReset: false };
+    return { ratePerHour, safeRatePerHour, projectedAtResetPercent, willHitBeforeReset: false };
   }
 
   const hoursToHit = remaining / ratePerHour;
@@ -83,7 +86,27 @@ export function computePace(
   return {
     ratePerHour,
     safeRatePerHour,
+    projectedAtResetPercent,
     projectedHitAt,
     willHitBeforeReset: projectedHitAt.getTime() < resetsAt.getTime(),
   };
+}
+
+/**
+ * How far through its limit window the clock has advanced, in percent (0-100).
+ * Compared against usedPercent this shows whether usage runs ahead of time
+ * ("60% elapsed, 80% used" = burning too fast). Undefined when the window
+ * length or reset time is unknown.
+ */
+export function windowElapsedPercent(
+  windowSeconds: number | undefined,
+  resetsAt: Date | undefined,
+  now: Date,
+): number | undefined {
+  if (!windowSeconds || windowSeconds <= 0 || !resetsAt) {
+    return undefined;
+  }
+  const windowMs = windowSeconds * 1000;
+  const elapsedMs = windowMs - (resetsAt.getTime() - now.getTime());
+  return Math.min(100, Math.max(0, (elapsedMs / windowMs) * 100));
 }

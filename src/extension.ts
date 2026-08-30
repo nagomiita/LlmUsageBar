@@ -3,7 +3,7 @@ import { ClaudeProvider } from "./providers/claude";
 import { CodexProvider } from "./providers/codex";
 import { GithubProvider } from "./providers/github";
 import { ProviderError, type UsageProvider, type UsageSnapshot } from "./types";
-import { appendSample, computePace, type PaceResult, type Sample } from "./pace";
+import { appendSample, computePace, windowElapsedPercent, type PaceResult, type Sample } from "./pace";
 import { displayWidth, renderBar, renderGaugeLine } from "./gauge";
 import {
   cleanupOnceMarkers,
@@ -107,7 +107,7 @@ function formatCountdown(resetsAt: Date, now: Date): string {
   return vscode.l10n.t("{0}m", minutes);
 }
 
-/** Wall-clock reset time in the machine's local timezone: "15:30", or "9/4 15:30" on another day. */
+/** Wall-clock reset time in the machine's local timezone: "15:30", or "9/4(金) 15:30" on another day. */
 function formatClock(at: Date, now: Date): string {
   const time = at.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
   const sameDay =
@@ -115,7 +115,7 @@ function formatClock(at: Date, now: Date): string {
   if (sameDay) {
     return time;
   }
-  return `${at.toLocaleDateString(undefined, { month: "numeric", day: "numeric" })} ${time}`;
+  return `${at.toLocaleDateString(undefined, { month: "numeric", day: "numeric", weekday: "short" })} ${time}`;
 }
 
 /** "5h" → "5時間", "7d Opus" → "7日 Opus" when the display language localizes the units. */
@@ -219,7 +219,7 @@ function buildTooltip(state: ProviderState): vscode.MarkdownString {
     const labels = snapshot.windows.map((w) => localizeWindowLabel(w.label));
     const labelWidth = Math.max(...labels.map(displayWidth)) + 2;
     const lines = snapshot.windows.map((w, i) => {
-      // Countdown plus the wall-clock reset time, e.g. "2h 13m (18:09)" / "4d 17h (9/4 12:00)".
+      // Countdown plus the wall-clock reset time, e.g. "2h 13m (18:09)" / "4d 17h (9/4(金) 12:00)".
       const reset = w.resetsAt ? `${formatCountdown(w.resetsAt, now)} (${formatClock(w.resetsAt, now)})` : "";
       const risk = state.pace.get(w.label)?.willHitBeforeReset ? " ↗" : "";
       return renderGaugeLine(labels[i], w.usedPercent, `${reset}${risk}`, labelWidth);
@@ -247,10 +247,13 @@ function buildTooltip(state: ProviderState): vscode.MarkdownString {
         md.appendMarkdown(`${vscode.l10n.t("Organization: {0}", organization)}\n\n`);
       }
     }
-    const atRisk = snapshot.windows.filter((w) => state.pace.get(w.label)?.willHitBeforeReset);
-    if (atRisk.length > 0) {
-      for (const w of atRisk) {
-        const pace = state.pace.get(w.label)!;
+    // One pace line per window: how far the clock has advanced vs. how much is
+    // used, plus where usage lands at reset if the current rate holds. Windows
+    // on pace to hit their limit get the flame warning instead.
+    for (const w of snapshot.windows) {
+      const label = localizeWindowLabel(w.label);
+      const pace = state.pace.get(w.label);
+      if (pace?.willHitBeforeReset) {
         // Long windows are judged and reported per day, short ones per hour.
         const perDay = (w.windowSeconds ?? 0) >= 2 * 86400;
         const rateText = perDay
@@ -259,14 +262,38 @@ function buildTooltip(state: ProviderState): vscode.MarkdownString {
         md.appendMarkdown(
           `$(flame) ${vscode.l10n.t(
             "{0} window: at the current pace ({1}), the limit will be reached in about {2} — before the reset.",
-            localizeWindowLabel(w.label),
+            label,
             rateText,
             formatCountdown(pace.projectedHitAt!, now),
           )}\n\n`,
         );
+        continue;
       }
-    } else if (state.pace.size > 0) {
-      md.appendMarkdown(`${vscode.l10n.t("At the current pace, no limit is reached before its reset.")}\n\n`);
+      const elapsed = windowElapsedPercent(w.windowSeconds, w.resetsAt, now);
+      const used = Math.round(w.usedPercent);
+      if (elapsed !== undefined && pace) {
+        md.appendMarkdown(
+          `$(graph-line) ${vscode.l10n.t(
+            "{0} window: {1}% elapsed, {2}% used — on pace for about {3}% at reset.",
+            label,
+            Math.round(elapsed),
+            used,
+            Math.round(pace.projectedAtResetPercent),
+          )}\n\n`,
+        );
+      } else if (elapsed !== undefined) {
+        md.appendMarkdown(
+          `$(graph-line) ${vscode.l10n.t("{0} window: {1}% elapsed, {2}% used.", label, Math.round(elapsed), used)}\n\n`,
+        );
+      } else if (pace) {
+        md.appendMarkdown(
+          `$(graph-line) ${vscode.l10n.t(
+            "{0} window: on pace for about {1}% at reset.",
+            label,
+            Math.round(pace.projectedAtResetPercent),
+          )}\n\n`,
+        );
+      }
     }
     const credits = snapshot.credits;
     if (credits) {

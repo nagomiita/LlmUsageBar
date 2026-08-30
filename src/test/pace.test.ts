@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
-import { appendSample, computePace, type Sample } from "../pace";
+import { appendSample, computePace, windowElapsedPercent, type Sample } from "../pace";
 
 const H = 3_600_000;
 const NOW = new Date("2026-07-05T12:00:00Z");
@@ -35,6 +35,16 @@ test("safe when reset comes before the projected hit", () => {
   assert.ok(pace);
   assert.equal(pace.willHitBeforeReset, false);
   assert.ok(pace.projectedHitAt);
+  // 30% + 5%/h * 2h = 40% at reset.
+  assert.equal(Math.round(pace.projectedAtResetPercent), 40);
+});
+
+test("projection at reset is clamped to 100 when the limit is hit first", () => {
+  // 60% + 20%/h * 4h = 140 → clamped.
+  const history = samples([60, 40], [30, 50], [0, 60]);
+  const pace = computePace(history, new Date(NOW.getTime() + 4 * H), NOW);
+  assert.ok(pace);
+  assert.equal(pace.projectedAtResetPercent, 100);
 });
 
 test("negative rate (sliding window draining) is safe with no projection", () => {
@@ -44,6 +54,29 @@ test("negative rate (sliding window draining) is safe with no projection", () =>
   assert.ok(pace.ratePerHour < 0);
   assert.equal(pace.willHitBeforeReset, false);
   assert.equal(pace.projectedHitAt, undefined);
+  // 60% draining at 12%/h → 24% at reset in 3h; clamped at 0 further out.
+  assert.equal(Math.round(pace.projectedAtResetPercent), 24);
+  const farReset = computePace(history, new Date(NOW.getTime() + 12 * H), NOW);
+  assert.equal(farReset?.projectedAtResetPercent, 0);
+});
+
+test("windowElapsedPercent compares clock progress against the window length", () => {
+  // 5h window with 2h to reset → 3h elapsed → 60%.
+  const resetsAt = new Date(NOW.getTime() + 2 * H);
+  assert.equal(windowElapsedPercent(5 * 3600, resetsAt, NOW), 60);
+});
+
+test("windowElapsedPercent is undefined without a window length or reset time", () => {
+  assert.equal(windowElapsedPercent(undefined, new Date(NOW.getTime() + H), NOW), undefined);
+  assert.equal(windowElapsedPercent(0, new Date(NOW.getTime() + H), NOW), undefined);
+  assert.equal(windowElapsedPercent(5 * 3600, undefined, NOW), undefined);
+});
+
+test("windowElapsedPercent clamps stale or skewed reset times to 0-100", () => {
+  // Reset already passed → fully elapsed.
+  assert.equal(windowElapsedPercent(5 * 3600, new Date(NOW.getTime() - H), NOW), 100);
+  // Reset further away than the window length (e.g. 30-day approximation) → 0.
+  assert.equal(windowElapsedPercent(5 * 3600, new Date(NOW.getTime() + 6 * H), NOW), 0);
 });
 
 test("returns undefined when the sample span is too short to judge", () => {
